@@ -26,7 +26,7 @@
             background: #2a2a2a;
             border-radius: 20px;
             padding: 30px;
-            max-width: 500px;
+            max-width: 600px;
             width: 100%;
             box-shadow: 0 10px 30px rgba(0,0,0,0.5);
         }
@@ -48,6 +48,10 @@
             display: none;
         }
 
+        .preset-section {
+            display: none;
+        }
+
         .form-group {
             margin-bottom: 20px;
         }
@@ -61,7 +65,7 @@
             letter-spacing: 1px;
         }
 
-        input[type="text"] {
+        input[type="text"], input[type="password"], textarea {
             width: 100%;
             padding: 12px;
             border: 2px solid #444;
@@ -72,9 +76,14 @@
             transition: border-color 0.3s;
         }
 
-        input[type="text"]:focus {
+        input[type="text"]:focus, input[type="password"]:focus, textarea:focus {
             outline: none;
             border-color: #4CAF50;
+        }
+
+        textarea {
+            resize: vertical;
+            min-height: 80px;
         }
 
         .button {
@@ -96,6 +105,23 @@
             background: #45a049;
             transform: translateY(-2px);
             box-shadow: 0 5px 15px rgba(76, 175, 80, 0.3);
+        }
+
+        .button.secondary {
+            background: #666;
+            margin-top: 10px;
+        }
+
+        .button.secondary:hover {
+            background: #777;
+        }
+
+        .button.danger {
+            background: #ff4444;
+        }
+
+        .button.danger:hover {
+            background: #ff5555;
         }
 
         .status-bar {
@@ -239,6 +265,113 @@
             text-align: center;
             display: none;
         }
+
+        .controls-panel {
+            background: #1a1a1a;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+
+        .control-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 10px;
+        }
+
+        .control-row:last-child {
+            margin-bottom: 0;
+        }
+
+        .checkbox-label {
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .checkbox-label input[type="checkbox"] {
+            margin-right: 8px;
+            cursor: pointer;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        .button-group .button {
+            flex: 1;
+        }
+
+        .preset-list {
+            background: #1a1a1a;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 20px 0;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .preset-item {
+            background: #333;
+            border-radius: 8px;
+            padding: 10px;
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .preset-item:last-child {
+            margin-bottom: 0;
+        }
+
+        .preset-text {
+            flex: 1;
+            margin-right: 10px;
+        }
+
+        .preset-actions {
+            display: flex;
+            gap: 5px;
+        }
+
+        .preset-button {
+            padding: 5px 10px;
+            border: none;
+            border-radius: 4px;
+            background: #4CAF50;
+            color: white;
+            cursor: pointer;
+            font-size: 12px;
+        }
+
+        .preset-button.delete {
+            background: #ff4444;
+        }
+
+        .preset-button:hover {
+            opacity: 0.8;
+        }
+
+        select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #444;
+            border-radius: 8px;
+            background: #1a1a1a;
+            color: #e0e0e0;
+            font-size: 16px;
+            cursor: pointer;
+        }
+
+        select:focus {
+            outline: none;
+            border-color: #4CAF50;
+        }
     </style>
 </head>
 <body>
@@ -266,6 +399,39 @@
                 <div id="rangerDisplay"></div>
             </div>
 
+            <div class="controls-panel">
+                <div class="control-row">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="accessToneToggle" checked>
+                        Access Tone (Courtesy Beep)
+                    </label>
+                </div>
+                <div class="control-row">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="rogerBeepToggle" checked>
+                        Roger Beep
+                    </label>
+                </div>
+                <div class="control-row">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="squelchTailToggle" checked>
+                        Squelch Tail
+                    </label>
+                </div>
+                <div class="control-row">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="backgroundNoiseToggle" checked>
+                        Background Noise
+                    </label>
+                </div>
+                <div class="control-row">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="radioEffectsToggle" checked>
+                        Radio Audio Effects
+                    </label>
+                </div>
+            </div>
+
             <div class="ptt-container">
                 <button class="ptt-button" id="pttButton">
                     PUSH<br>TO<br>TALK
@@ -280,547 +446,50 @@
             <div class="activity-log" id="activityLog">
                 <div class="log-entry system">System: Radio network initialized</div>
             </div>
+
+            <div class="button-group">
+                <button class="button secondary" id="presetButton">Preset Messages</button>
+                <button class="button danger" id="exitButton">Exit Network</button>
+            </div>
+        </div>
+
+        <!-- Preset Messages Section -->
+        <div class="preset-section" id="presetSection">
+            <h2 style="text-align: center; margin-bottom: 20px;">Preset Messages</h2>
+            
+            <div class="form-group">
+                <label for="openaiKey">OpenAI API Key</label>
+                <input type="password" id="openaiKey" placeholder="sk-...">
+            </div>
+
+            <div class="form-group">
+                <label for="voiceSelect">Voice Selection</label>
+                <select id="voiceSelect">
+                    <option value="alloy">Alloy</option>
+                    <option value="echo">Echo</option>
+                    <option value="fable">Fable</option>
+                    <option value="onyx">Onyx</option>
+                    <option value="nova">Nova</option>
+                    <option value="shimmer">Shimmer</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="presetMessage">New Preset Message</label>
+                <textarea id="presetMessage" placeholder="Enter your message..."></textarea>
+            </div>
+
+            <button class="button" id="addPresetButton">Add Preset</button>
+
+            <div class="preset-list" id="presetList">
+                <!-- Preset messages will appear here -->
+            </div>
+
+            <button class="button secondary" id="backToRadioButton">Back to Radio</button>
         </div>
     </div>
 
     <script src="https://cdn.socket.io/4.6.1/socket.io.min.js"></script>
-    <script>
-        // Configuration
-        const BACKEND_URL = 'http://localhost:3000'; // Change this to your backend URL when deployed
-
-        // Audio context and nodes
-        let audioContext;
-        let mediaStream;
-        let mediaRecorder;
-        let audioChunks = [];
-        let isTransmitting = false;
-        let channelBusy = false;
-        let rangerName = '';
-        let volume = 0.75;
-
-        // Socket.IO connection
-        let socket = null;
-        let wsConnected = false;
-        let otherRangers = [];
-
-        // Radio effect nodes
-        let compressor;
-        let bandpass;
-        let distortion;
-        let noiseGain;
-        let noiseSource;
-
-        // Audio elements
-        const busyTone = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBSuBzvLZiTYIG2m98OScTgwOUazi5blmFgU7k9n1unEiBC13yO/eizEIHWq+8+OWT' +
-                            'AkPVq3k67JlGQU3k9j1yHkiBCt1yPDeiDIIHGu+8+OWTAkOVqzk47FmGQU3k9j1yHkiBCt1yPDeiDIIHGu+8+OWTAkOVqzk47FmGQU3k9j1yHkiBCt1yPDeiDIIHGu+8+OWTAkOVqzk47FmGQU3k9j1yHkiBCt1yPDeiDIIHGu+8+OWTAkOVqzk5rJmGAU3k9j1yHkiBCt1yPDeiDIIHGu+8+OWTAkOVqzk5rJmGAU4lNj1yHkiBCt1yPDeiDIIHGu+8+OWTA' +
-                            'kOVqzk5rJmGAU4lNj1yHkiBCt1yPDeiDIIHGu+8+OWTAkOVqzk5rJmGAU4lNj1yHkiBCt1yPDeiDIIHGu+8+OWTAkOVqzk5rJmGAU4lNj1yHkiBCt1yPDeiDIIHGu+8+OWTAkOVqzk5rJmGAU4lNj1yHkiBCt1yPDeiDIIHGu+8+OWTAkOVqzk5rJmGAU4lNj1yHkiBCt1yPDeiDIIHGu+8+OWTAkOVqzk5rJmGAU4lNj1yHkiBCt1yPDeiDIIHGu+8+OXTAkOVqzk5rJmGAU4lNj1yHkiBCt2yPDeiDIIHGu+8+OXTAkOVqzk5rJmGAU4lNj1yHkiBCt2yPDeiDIIHGu+8+OXTAkOVqzk5rJmGAU4lNj1yHkiBCt2yPDeiDIIHGu+8+OXTAkOVqzk5rJmGAU4lNj1yHkiBCt2yPDeiDIIHGu+8+OXTAkOVqzk5rJmGAU4lNj1yHkiBCt2yPDeiDIIHGu+8+OXTAkOVqzk5rJmGAU4lNj1yHkiBCt2yPDeiDIIHGu+8+OXTAkOVqzk5rJmGAU4lNj1yHkiBCt2yPDeiDIIHGu+8+OXTAkOVqzk5rJmGAU4lNj1yHkiBCt2yPDeiDIIHGu+8+OXTAkOVqzk5rJmGAU4lNj1yHkiBCt2yPDeiDIIHGu+8+OXTAkOVqzk5rJmGAU4lNj1yHkiBCt2yPDeiDIIHGu+8+OXTAkOVqzk5rJmGAU4lNj1yHkiBCt2yPDeiDIIHGu+8+OXTAkOVqzk5rJmGAU4lNj1yHkiBCt2yPDeiDIIHGu+8+OXTAkOVqzk5rJmGAU4lNj1yHkiBCt2yPDeiDIIHGu+8+OXTAkOVqzk5rJmGAU4lNj1yHkiBCt2yPDeiDIIHGu+8+OXTAkOVqzk5rJmGAU4lNj1yHkiBCt2yPDeiDIIHGu+8+OXTAkOVqzk5rJmGAU4lNj1yHkiBCt2yPDeiDIIHGu+8+OXTAkOVqzk5rJmGAU4lNj1yHkiBCt2yPDeiDIIHGu+8+OXTAkOVqzk5rJnGAU4lNj1yHkiBCt2yPDeiDIIHGu+8+OXTAkOVqzk5rJnGAU4lNj1yHkiBCt2yPDeiDIIHGu+8+OXTAkOVqzk5rJnGAU4lNj1yHkiBCt2yPDeiDIIHGu+8+OXTAkOVqzk5rJnGAU4lNj1yHkiBCt2yPDeiDIIHGu+8+OXTAkOVqzk5rJnGAU4lNj1yHkiBCt2yPDeiDIIHGu+8+OXTAkOVqzk5rJnGAU4lNj1yHkiBCt2yPDeiDIIHGu+8+OXTAkOVqzk5rJnGAU4lNj1yHkiBCt2yPDeiDIIHGu+8+OXTAkOVqzk5rJnGAU4lNj1yHkiBCt2yPDeiDIIHGu+8+OXTAkOVqzk5rJnGAU4lNj1yHkiBCt2yPDeiDIIHGu+8+OXTAkOVqzk5rJnGAU4lNj1yHkiBCt2yPDeiDIIHGu+8+OXTAkOVqzk5rJnGAU4lNj1yHkiBCt2yPDeiDIIHGu+8+OXTAkOVqzk5rJnGAU4lNj1yHkiBCt2yPDeiDIIHGu+8+OXTAkOVqzk5rJnGAU4lNj1yHkiBCt2yPDeiDIIHGu+8+OXTAkOVqzk5rJnGAU4lNj1yHkiBCt2yPDeiDIIHGu+8+OXTAkOVqzk5rJnGAU4lNj1yHkiBCt2yPDeiDII');
-        busyTone.volume = 0.3;
-
-        // Create roger beep (end of transmission tone)
-        function createRogerBeep() {
-            const oscillator = audioContext.createOscillator();
-            const gainNode = audioContext.createGain();
-            
-            oscillator.frequency.setValueAtTime(800, audioContext.currentTime);
-            oscillator.frequency.exponentialRampToValueAtTime(600, audioContext.currentTime + 0.1);
-            
-            gainNode.gain.setValueAtTime(0.3 * volume, audioContext.currentTime);
-            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
-            
-            oscillator.connect(gainNode);
-            gainNode.connect(audioContext.destination);
-            
-            oscillator.start(audioContext.currentTime);
-            oscillator.stop(audioContext.currentTime + 0.1);
-        }
-
-        // Create access tone (courtesy tone before speaking)
-        function playAccessTone(callback) {
-            const oscillator = audioContext.createOscillator();
-            const gainNode = audioContext.createGain();
-            
-            oscillator.frequency.setValueAtTime(1200, audioContext.currentTime);
-            gainNode.gain.setValueAtTime(0.3 * volume, audioContext.currentTime);
-            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.15);
-            
-            oscillator.connect(gainNode);
-            gainNode.connect(audioContext.destination);
-            
-            oscillator.start(audioContext.currentTime);
-            oscillator.stop(audioContext.currentTime + 0.15);
-            
-            // Signal when it's safe to speak
-            setTimeout(callback, 200);
-        }
-
-        // Create squelch tail (brief static after transmission)
-        function playSquelchTail() {
-            const duration = 0.2;
-            const bufferSize = audioContext.sampleRate * duration;
-            const buffer = audioContext.createBuffer(1, bufferSize, audioContext.sampleRate);
-            const data = buffer.getChannelData(0);
-            
-            // Generate white noise that fades out
-            for (let i = 0; i < bufferSize; i++) {
-                const envelope = 1 - (i / bufferSize);
-                data[i] = (Math.random() * 2 - 1) * envelope * 0.1;
-            }
-            
-            const source = audioContext.createBufferSource();
-            const gainNode = audioContext.createGain();
-            
-            source.buffer = buffer;
-            gainNode.gain.value = volume * 0.3;
-            
-            source.connect(gainNode);
-            gainNode.connect(audioContext.destination);
-            
-            source.start();
-        }
-
-        // Initialize Socket.IO connection
-        function initSocket() {
-            socket = io(BACKEND_URL);
-
-            socket.on('connect', () => {
-                console.log('Connected to server');
-                wsConnected = true;
-                addLogEntry('Connected to radio network', 'system');
-            });
-
-            socket.on('disconnect', () => {
-                console.log('Disconnected from server');
-                wsConnected = false;
-                addLogEntry('Disconnected from radio network', 'system');
-                showError('Connection lost. Please refresh the page.');
-            });
-
-            socket.on('joined', (data) => {
-                otherRangers = data.connectedRangers.filter(r => r !== rangerName);
-                channelBusy = data.channelBusy;
-                if (data.currentTransmitter) {
-                    updateChannelStatus(true, data.currentTransmitter);
-                }
-                addLogEntry(`Successfully joined. ${otherRangers.length} other rangers online`, 'system');
-            });
-
-            socket.on('join-error', (data) => {
-                showError(data.message);
-                loginSection.style.display = 'block';
-                radioSection.style.display = 'none';
-            });
-
-            socket.on('ranger-joined', (data) => {
-                addLogEntry(`${data.rangerName} joined the network`, 'system');
-            });
-
-            socket.on('ranger-left', (data) => {
-                addLogEntry(`${data.rangerName} left the network`, 'system');
-            });
-
-            socket.on('transmission-granted', () => {
-                console.log('Transmission granted');
-                // Start recording is handled in startTransmission
-            });
-
-            socket.on('transmission-denied', (data) => {
-                busyTone.play();
-                pttButton.classList.add('blocked');
-                setTimeout(() => pttButton.classList.remove('blocked'), 500);
-                addLogEntry(`Channel busy - ${data.currentTransmitter} is transmitting`, 'system');
-            });
-
-            socket.on('transmission-started', (data) => {
-                channelBusy = true;
-                updateChannelStatus(true, data.rangerName);
-                addLogEntry(`${data.rangerName} is transmitting`, 'transmission');
-                
-                // Reduce background noise when someone starts transmitting
-                if (noiseGain) noiseGain.gain.value = 0.005;
-            });
-
-            socket.on('transmission-ended', (data) => {
-                channelBusy = false;
-                updateChannelStatus(false);
-                addLogEntry(`${data.rangerName} ended transmission`, 'transmission');
-                
-                // Play roger beep for remote transmissions too
-                createRogerBeep();
-                
-                // Play squelch tail
-                setTimeout(() => {
-                    playSquelchTail();
-                }, 100);
-                
-                // Restore background noise
-                if (noiseGain && !isTransmitting) {
-                    setTimeout(() => {
-                        noiseGain.gain.value = 0.02;
-                    }, 300);
-                }
-            });
-
-            socket.on('audio-stream', (data) => {
-                playReceivedAudio(data.audioData);
-            });
-
-            socket.on('transmission-interrupted', (data) => {
-                if (isTransmitting) {
-                    stopTransmission();
-                    addLogEntry(`Transmission interrupted by ${data.interruptedBy} (${data.reason})`, 'system');
-                }
-            });
-
-            socket.on('emergency-broadcast-started', (data) => {
-                addLogEntry(`EMERGENCY: ${data.rangerName} initiated emergency broadcast`, 'system');
-            });
-        }
-
-        // Initialize audio context
-        async function initAudio() {
-            try {
-                audioContext = new (window.AudioContext || window.webkitAudioContext)();
-                
-                // Request microphone permission
-                mediaStream = await navigator.mediaDevices.getUserMedia({ 
-                    audio: {
-                        echoCancellation: false,  // Keep raw audio
-                        noiseSuppression: false,  // We'll add our own noise
-                        autoGainControl: true
-                    }
-                });
-                
-                // Set up audio processing chain for radio effects
-                setupRadioEffects();
-                
-                // Set up media recorder with radio-processed audio
-                const radioStream = setupRadioProcessing(mediaStream);
-                
-                mediaRecorder = new MediaRecorder(radioStream, {
-                    mimeType: 'audio/webm;codecs=opus'
-                });
-                
-                mediaRecorder.ondataavailable = (event) => {
-                    if (event.data.size > 0 && socket && isTransmitting) {
-                        // Convert to base64 for transmission
-                        const reader = new FileReader();
-                        reader.onload = () => {
-                            socket.emit('audio-data', {
-                                audioData: reader.result,
-                                timestamp: Date.now()
-                            });
-                        };
-                        reader.readAsDataURL(event.data);
-                    }
-                };
-                
-                mediaRecorder.onstop = async () => {
-                    // Play roger beep
-                    createRogerBeep();
-                    
-                    // Play squelch tail after a short delay
-                    setTimeout(() => {
-                        playSquelchTail();
-                    }, 100);
-                    
-                    // Notify server that transmission has ended
-                    if (socket) {
-                        socket.emit('end-transmission');
-                    }
-                };
-                
-                // Start background noise
-                startBackgroundNoise();
-                
-                return true;
-            } catch (error) {
-                console.error('Audio initialization failed:', error);
-                showError('Microphone access denied. Please allow microphone access and reload.');
-                return false;
-            }
-        }
-
-        // Set up radio audio effects
-        function setupRadioEffects() {
-            // Compressor for that "squashed" radio sound
-            compressor = audioContext.createDynamicsCompressor();
-            compressor.threshold.value = -20;
-            compressor.knee.value = 10;
-            compressor.ratio.value = 12;
-            compressor.attack.value = 0.003;
-            compressor.release.value = 0.25;
-            
-            // Bandpass filter for radio frequency response
-            bandpass = audioContext.createBiquadFilter();
-            bandpass.type = 'bandpass';
-            bandpass.frequency.value = 2000;
-            bandpass.Q.value = 5;
-            
-            // Slight distortion for that analog feel
-            distortion = audioContext.createWaveShaper();
-            distortion.curve = makeDistortionCurve(20);
-            distortion.oversample = '4x';
-        }
-
-        // Create distortion curve
-        function makeDistortionCurve(amount) {
-            const samples = 44100;
-            const curve = new Float32Array(samples);
-            const deg = Math.PI / 180;
-            
-            for (let i = 0; i < samples; i++) {
-                const x = (i * 2) / samples - 1;
-                curve[i] = ((3 + amount) * x * 20 * deg) / (Math.PI + amount * Math.abs(x));
-            }
-            
-            return curve;
-        }
-
-        // Set up radio processing for microphone
-        function setupRadioProcessing(stream) {
-            const source = audioContext.createMediaStreamSource(stream);
-            const destination = audioContext.createMediaStreamDestination();
-            
-            // Connect the processing chain
-            source.connect(compressor);
-            compressor.connect(bandpass);
-            bandpass.connect(distortion);
-            distortion.connect(destination);
-            
-            return destination.stream;
-        }
-
-        // Start background radio noise
-        function startBackgroundNoise() {
-            const bufferSize = 4096;
-            noiseSource = audioContext.createScriptProcessor(bufferSize, 1, 1);
-            noiseGain = audioContext.createGain();
-            noiseGain.gain.value = 0.02; // Very quiet background noise
-            
-            noiseSource.onaudioprocess = (e) => {
-                const output = e.outputBuffer.getChannelData(0);
-                for (let i = 0; i < bufferSize; i++) {
-                    output[i] = Math.random() * 2 - 1;
-                }
-            };
-            
-            // Filter the noise to make it sound more like radio static
-            const noiseFilter = audioContext.createBiquadFilter();
-            noiseFilter.type = 'bandpass';
-            noiseFilter.frequency.value = 3000;
-            noiseFilter.Q.value = 0.7;
-            
-            noiseSource.connect(noiseFilter);
-            noiseFilter.connect(noiseGain);
-            noiseGain.connect(audioContext.destination);
-        }
-
-        // Play received audio
-        async function playReceivedAudio(audioDataUrl) {
-            try {
-                // Reduce background noise when receiving
-                if (noiseGain) noiseGain.gain.value = 0.005;
-                
-                const response = await fetch(audioDataUrl);
-                const arrayBuffer = await response.arrayBuffer();
-                const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-                
-                const source = audioContext.createBufferSource();
-                const gainNode = audioContext.createGain();
-                
-                // Add some radio processing to received audio too
-                const receivedBandpass = audioContext.createBiquadFilter();
-                receivedBandpass.type = 'bandpass';
-                receivedBandpass.frequency.value = 2000;
-                receivedBandpass.Q.value = 5;
-                
-                source.buffer = audioBuffer;
-                gainNode.gain.value = volume;
-                
-                source.connect(receivedBandpass);
-                receivedBandpass.connect(gainNode);
-                gainNode.connect(audioContext.destination);
-                
-                source.start();
-                
-                // Restore noise after audio ends
-                source.onended = () => {
-                    if (noiseGain && !channelBusy) {
-                        setTimeout(() => {
-                            noiseGain.gain.value = 0.02;
-                        }, 200);
-                    }
-                };
-            } catch (error) {
-                console.error('Error playing received audio:', error);
-            }
-        }
-
-        // Show error message
-        function showError(message) {
-            errorMessage.textContent = message;
-            errorMessage.style.display = 'block';
-            setTimeout(() => {
-                errorMessage.style.display = 'none';
-            }, 5000);
-        }
-
-        // Add log entry
-        function addLogEntry(message, type = 'system') {
-            const entry = document.createElement('div');
-            entry.className = `log-entry ${type}`;
-            entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
-            activityLog.appendChild(entry);
-            activityLog.scrollTop = activityLog.scrollHeight;
-        }
-
-        // Update channel status display
-        function updateChannelStatus(busy, transmittingRanger = null) {
-            if (busy) {
-                statusLight.classList.add('channel-busy');
-                statusText.textContent = `${transmittingRanger} transmitting...`;
-            } else {
-                statusLight.classList.remove('channel-busy');
-                statusText.textContent = 'Channel Clear';
-            }
-        }
-
-        // Start transmission
-        function startTransmission() {
-            if (!socket || !wsConnected) {
-                showError('Not connected to server');
-                return;
-            }
-
-            // Request permission to transmit
-            socket.emit('request-transmission');
-            
-            socket.once('transmission-granted', () => {
-                // Play access tone first, then allow transmission
-                pttButton.classList.add('transmitting');
-                pttButton.textContent = 'WAIT...';
-                
-                playAccessTone(() => {
-                    // Now it's safe to speak
-                    pttButton.textContent = 'TRANSMIT';
-                    isTransmitting = true;
-                    
-                    // Reduce background noise during transmission
-                    if (noiseGain) noiseGain.gain.value = 0.005;
-                    
-                    // Start recording with time slicing for real-time streaming
-                    mediaRecorder.start(100); // Send chunks every 100ms
-                    addLogEntry(`${rangerName}: Beginning transmission`, 'transmission');
-                });
-            });
-        }
-
-        // Stop transmission
-        function stopTransmission() {
-            if (!isTransmitting) return;
-            
-            isTransmitting = false;
-            pttButton.classList.remove('transmitting');
-            pttButton.innerHTML = 'PUSH<br>TO<br>TALK';
-            
-            // Restore background noise
-            if (noiseGain) noiseGain.gain.value = 0.02;
-            
-            // Stop recording
-            if (mediaRecorder.state === 'recording') {
-                mediaRecorder.stop();
-            }
-        }
-
-        // DOM elements
-        const loginSection = document.getElementById('loginSection');
-        const radioSection = document.getElementById('radioSection');
-        const rangerNameInput = document.getElementById('rangerName');
-        const joinButton = document.getElementById('joinButton');
-        const pttButton = document.getElementById('pttButton');
-        const statusLight = document.getElementById('statusLight');
-        const statusText = document.getElementById('statusText');
-        const rangerDisplay = document.getElementById('rangerDisplay');
-        const activityLog = document.getElementById('activityLog');
-        const volumeSlider = document.getElementById('volumeSlider');
-        const errorMessage = document.getElementById('errorMessage');
-
-        // Join radio network
-        joinButton.addEventListener('click', async () => {
-            rangerName = rangerNameInput.value.trim();
-            
-            if (!rangerName) {
-                showError('Please enter your ranger callsign');
-                return;
-            }
-            
-            // Initialize audio
-            const audioInitialized = await initAudio();
-            if (!audioInitialized) return;
-            
-            // Initialize Socket.IO connection
-            initSocket();
-            
-            // Wait for connection
-            socket.on('connect', () => {
-                // Join the network
-                socket.emit('join', { rangerName: rangerName });
-                
-                // Switch to radio interface after successful join
-                socket.once('joined', () => {
-                    loginSection.style.display = 'none';
-                    radioSection.style.display = 'block';
-                    rangerDisplay.textContent = rangerName;
-                });
-            });
-        });
-
-        // PTT button handlers
-        pttButton.addEventListener('mousedown', startTransmission);
-        pttButton.addEventListener('mouseup', stopTransmission);
-        pttButton.addEventListener('mouseleave', stopTransmission);
-        
-        // Touch support for mobile
-        pttButton.addEventListener('touchstart', (e) => {
-            e.preventDefault();
-            startTransmission();
-        });
-        
-        pttButton.addEventListener('touchend', (e) => {
-            e.preventDefault();
-            stopTransmission();
-        });
-
-        // Volume control
-        volumeSlider.addEventListener('input', (e) => {
-            volume = e.target.value / 100;
-            // Also adjust background noise volume
-            if (noiseGain && !channelBusy) {
-                noiseGain.gain.value = 0.02 * volume;
-            }
-        });
-
-        // Keyboard support (spacebar for PTT)
-        document.addEventListener('keydown', (e) => {
-            if (e.code === 'Space' && !isTransmitting && radioSection.style.display !== 'none') {
-                e.preventDefault();
-                startTransmission();
-            }
-        });
-        
-        document.addEventListener('keyup', (e) => {
-            if (e.code === 'Space' && isTransmitting) {
-                e.preventDefault();
-                stopTransmission();
-            }
-        });
-
-        // Handle page visibility changes
-        document.addEventListener('visibilitychange', () => {
-            if (document.hidden && isTransmitting) {
-                stopTransmission();
-            }
-        });
-    </script>
+    <script src="app.js"></script>
 </body>
 </html>
