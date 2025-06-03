@@ -3,495 +3,140 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Ranger Radio Training</title>
-    <link rel="icon" type="image/svg+xml" href="favicon.svg">
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        body {
-            font-family: 'Arial', sans-serif;
-            background: #1a1a1a;
-            color: #e0e0e0;
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 20px;
-        }
-
-        .container {
-            background: #2a2a2a;
-            border-radius: 20px;
-            padding: 30px;
-            max-width: 600px;
-            width: 100%;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-        }
-
-        h1 {
-            text-align: center;
-            margin-bottom: 30px;
-            color: #4CAF50;
-            text-transform: uppercase;
-            font-size: 24px;
-            letter-spacing: 2px;
-        }
-
-        .login-section {
-            display: block;
-        }
-
-        .radio-section {
-            display: none;
-        }
-
-        .preset-section {
-            display: none;
-        }
-
-        .form-group {
-            margin-bottom: 20px;
-        }
-
-        label {
-            display: block;
-            margin-bottom: 8px;
-            color: #b0b0b0;
-            font-size: 14px;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-        }
-
-        input[type="text"], input[type="password"], textarea {
-            width: 100%;
-            padding: 12px;
-            border: 2px solid #444;
-            border-radius: 8px;
-            background: #1a1a1a;
-            color: #e0e0e0;
-            font-size: 16px;
-            transition: border-color 0.3s;
-        }
-
-        input[type="text"]:focus, input[type="password"]:focus, textarea:focus {
-            outline: none;
-            border-color: #4CAF50;
-        }
-
-        textarea {
-            resize: vertical;
-            min-height: 80px;
-        }
-
-        .button {
-            width: 100%;
-            padding: 12px;
-            border: none;
-            border-radius: 8px;
-            background: #4CAF50;
-            color: white;
-            font-size: 16px;
-            font-weight: bold;
-            cursor: pointer;
-            transition: all 0.3s;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-        }
-
-        .button:hover {
-            background: #45a049;
-            transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(76, 175, 80, 0.3);
-        }
-
-        .button.secondary {
-            background: #666;
-            margin-top: 10px;
-        }
-
-        .button.secondary:hover {
-            background: #777;
-        }
-
-        .button.danger {
-            background: #ff4444;
-        }
-
-        .button.danger:hover {
-            background: #ff5555;
-        }
-
-        .status-bar {
-            background: #1a1a1a;
-            border-radius: 8px;
-            padding: 15px;
-            margin-bottom: 20px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .status-indicator {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-
-        .status-light {
-            width: 12px;
-            height: 12px;
-            border-radius: 50%;
-            background: #4CAF50;
-            box-shadow: 0 0 10px rgba(76, 175, 80, 0.5);
-            animation: pulse 2s infinite;
-        }
-
-        @keyframes pulse {
-            0% { opacity: 1; }
-            50% { opacity: 0.5; }
-            100% { opacity: 1; }
-        }
-
-        .channel-busy {
-            background: #ff4444;
-            box-shadow: 0 0 10px rgba(255, 68, 68, 0.5);
-            animation: none;
-        }
-
-        .ptt-container {
-            margin: 30px 0;
-            text-align: center;
-        }
-
-        .ptt-button {
-            width: 150px;
-            height: 150px;
-            border-radius: 50%;
-            border: 3px solid #666;
-            background: radial-gradient(circle, #3a3a3a, #2a2a2a);
-            color: #e0e0e0;
-            font-size: 20px;
-            font-weight: bold;
-            cursor: pointer;
-            transition: all 0.3s;
-            position: relative;
-            box-shadow: 0 5px 20px rgba(0,0,0,0.3);
-        }
-
-        .ptt-button:hover {
-            border-color: #4CAF50;
-            transform: scale(1.05);
-        }
-
-        .ptt-button:active, .ptt-button.transmitting {
-            background: radial-gradient(circle, #4CAF50, #45a049);
-            border-color: #4CAF50;
-            transform: scale(0.95);
-            box-shadow: 0 2px 10px rgba(76, 175, 80, 0.5);
-        }
-
-        .ptt-button.blocked {
-            background: radial-gradient(circle, #ff6666, #ff4444);
-            border-color: #ff4444;
-            cursor: not-allowed;
-        }
-
-        .activity-log {
-            background: #1a1a1a;
-            border-radius: 8px;
-            padding: 15px;
-            height: 200px;
-            overflow-y: auto;
-            font-family: 'Courier New', monospace;
-            font-size: 14px;
-        }
-
-        .log-entry {
-            margin-bottom: 5px;
-            padding: 5px;
-            border-radius: 4px;
-        }
-
-        .log-entry.transmission {
-            background: rgba(76, 175, 80, 0.2);
-            color: #4CAF50;
-        }
-
-        .log-entry.system {
-            background: rgba(255, 193, 7, 0.2);
-            color: #FFC107;
-        }
-
-        .volume-control {
-            margin: 20px 0;
-        }
-
-        .volume-slider {
-            width: 100%;
-            height: 6px;
-            border-radius: 3px;
-            background: #444;
-            outline: none;
-            -webkit-appearance: none;
-        }
-
-        .volume-slider::-webkit-slider-thumb {
-            -webkit-appearance: none;
-            appearance: none;
-            width: 20px;
-            height: 20px;
-            border-radius: 50%;
-            background: #4CAF50;
-            cursor: pointer;
-        }
-
-        .volume-slider::-moz-range-thumb {
-            width: 20px;
-            height: 20px;
-            border-radius: 50%;
-            background: #4CAF50;
-            cursor: pointer;    
-        }
-
-        .error-message {
-            background: rgba(255, 68, 68, 0.2);
-            color: #ff4444;
-            padding: 10px;
-            border-radius: 8px;
-            margin-bottom: 20px;
-            text-align: center;
-            display: none;
-        }
-
-        .controls-panel {
-            background: #1a1a1a;
-            border-radius: 8px;
-            padding: 15px;
-            margin-bottom: 20px;
-        }
-
-        .control-row {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            margin-bottom: 10px;
-        }
-
-        .control-row:last-child {
-            margin-bottom: 0;
-        }
-
-        .checkbox-label {
-            display: flex;
-            align-items: center;
-            cursor: pointer;
-            user-select: none;
-        }
-
-        .checkbox-label input[type="checkbox"] {
-            margin-right: 8px;
-            cursor: pointer;
-        }
-
-        .button-group {
-            display: flex;
-            gap: 10px;
-            margin-top: 20px;
-        }
-
-        .button-group .button {
-            flex: 1;
-        }
-
-        .preset-list {
-            background: #1a1a1a;
-            border-radius: 8px;
-            padding: 15px;
-            margin: 20px 0;
-            max-height: 300px;
-            overflow-y: auto;
-        }
-
-        .preset-item {
-            background: #333;
-            border-radius: 8px;
-            padding: 10px;
-            margin-bottom: 10px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .preset-item:last-child {
-            margin-bottom: 0;
-        }
-
-        .preset-text {
-            flex: 1;
-            margin-right: 10px;
-        }
-
-        .preset-actions {
-            display: flex;
-            gap: 5px;
-        }
-
-        .preset-button {
-            padding: 5px 10px;
-            border: none;
-            border-radius: 4px;
-            background: #4CAF50;
-            color: white;
-            cursor: pointer;
-            font-size: 12px;
-        }
-
-        .preset-button.delete {
-            background: #ff4444;
-        }
-
-        .preset-button:hover {
-            opacity: 0.8;
-        }
-
-        select {
-            width: 100%;
-            padding: 12px;
-            border: 2px solid #444;
-            border-radius: 8px;
-            background: #1a1a1a;
-            color: #e0e0e0;
-            font-size: 16px;
-            cursor: pointer;
-        }
-
-        select:focus {
-            outline: none;
-            border-color: #4CAF50;
-        }
-    </style>
+    <title>🎙️ Ranger Radio Training</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="/socket.io/socket.io.js"></script>
 </head>
 <body>
-    <div class="container">
-        <h1>🎙️ Ranger Radio Training</h1>
-        
-        <div class="error-message" id="errorMessage"></div>
-
-        <!-- Login Section -->
-        <div class="login-section" id="loginSection">
-            <div class="form-group">
-                <label for="rangerName">Ranger Callsign</label>
-                <input type="text" id="rangerName" placeholder="Enter your callsign (e.g., Ranger-1)" maxlength="20">
-            </div>
-            <button class="button" id="joinButton">Join Radio Network</button>
-        </div>
-
-        <!-- Radio Section -->
-        <div class="radio-section" id="radioSection">
-            <div class="status-bar">
-                <div class="status-indicator">
-                    <div class="status-light" id="statusLight"></div>
-                    <span id="statusText">Channel Clear</span>
-                </div>
-                <div id="rangerDisplay"></div>
-            </div>
-
-            <div class="controls-panel">
-                <div class="control-row">
-                    <label class="checkbox-label">
-                        <input type="checkbox" id="accessToneToggle" checked>
-                        Access Tone (Courtesy Beep)
-                    </label>
-                </div>
-                <div class="control-row">
-                    <label class="checkbox-label">
-                        <input type="checkbox" id="rogerBeepToggle" checked>
-                        Roger Beep
-                    </label>
-                </div>
-                <div class="control-row">
-                    <label class="checkbox-label">
-                        <input type="checkbox" id="squelchTailToggle" checked>
-                        Squelch Tail
-                    </label>
-                </div>
-                <div class="control-row">
-                    <label class="checkbox-label">
-                        <input type="checkbox" id="backgroundNoiseToggle" checked>
-                        Background Noise
-                    </label>
-                </div>
-                <div class="control-row">
-                    <label class="checkbox-label">
-                        <input type="checkbox" id="radioEffectsToggle" checked>
-                        Radio Audio Effects
-                    </label>
-                </div>
-            </div>
-
-            <div class="ptt-container">
-                <button class="ptt-button" id="pttButton">
-                    PUSH<br>TO<br>TALK
-                </button>
-            </div>
-
-            <div class="volume-control">
-                <label for="volumeSlider">Volume</label>
-                <input type="range" class="volume-slider" id="volumeSlider" min="0" max="100" value="75">
-            </div>
-
-            <div class="activity-log" id="activityLog">
-                <div class="log-entry system">System: Radio network initialized</div>
-            </div>
-
-            <div class="button-group">
-                <button class="button secondary" id="presetButton">Preset Messages</button>
-                <button class="button danger" id="exitButton">Exit Network</button>
-            </div>
-        </div>
-
-        <!-- Preset Messages Section -->
-        <div class="preset-section" id="presetSection">
-            <h2 style="text-align: center; margin-bottom: 20px;">Preset Messages</h2>
-            
-            <div class="form-group">
-                <label for="openaiKey">OpenAI API Key</label>
-                <input type="password" id="openaiKey" placeholder="sk-...">
-            </div>
-
-            <div class="form-group">
-                <label for="voiceSelect">Voice Selection</label>
-                <select id="voiceSelect">
-                    <option value="alloy">Alloy</option>
-                    <option value="echo">Echo</option>
-                    <option value="fable">Fable</option>
-                    <option value="onyx">Onyx</option>
-                    <option value="nova">Nova</option>
-                    <option value="shimmer">Shimmer</option>
-                </select>
-            </div>
-
-            <div class="form-group">
-                <label for="presetMessage">New Preset Message</label>
-                <textarea id="presetMessage" placeholder="Enter your message..."></textarea>
-            </div>
-
-            <button class="button" id="addPresetButton">Add Preset</button>
-
-            <div class="preset-list" id="presetList">
-                <!-- Preset messages will appear here -->
-            </div>
-
-            <button class="button secondary" id="backToRadioButton">Back to Radio</button>
+    <!-- Login Screen -->
+    <div id="login-screen" class="login-screen">
+        <div class="login-container">
+            <h1>🎙️ Ranger Radio Training</h1>
+            <p>Enter your callsign to join the radio network</p>
+            <input 
+                type="text" 
+                id="callsign" 
+                placeholder="Ranger Callsign" 
+                maxlength="10"
+                autocomplete="off"
+            >
+            <button id="join-button" class="btn btn-primary">Join Radio Network</button>
         </div>
     </div>
 
-    <script src="https://cdn.socket.io/4.6.1/socket.io.min.js"></script>
-    <script src="config-loader.js"></script>
+    <!-- Radio Interface -->
+    <div id="radio-interface" class="radio-interface" style="display: none;">
+        <header>
+            <h1>🎙️ Ranger Radio Training</h1>
+            <div class="header-info">
+                <span id="current-callsign" class="callsign"></span>
+                <span id="status-indicator" class="status-indicator">OFFLINE</span>
+            </div>
+        </header>
+
+        <main>
+            <div class="controls-section">
+                <!-- Radio Effects Controls -->
+                <div class="effects-panel">
+                    <h3>Radio Effects</h3>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="access-tone-toggle" checked>
+                        <span class="slider"></span>
+                        <span class="label">Access Tone (Courtesy Beep)</span>
+                    </label>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="roger-beep-toggle" checked>
+                        <span class="slider"></span>
+                        <span class="label">Roger Beep</span>
+                    </label>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="squelch-tail-toggle" checked>
+                        <span class="slider"></span>
+                        <span class="label">Squelch Tail</span>
+                    </label>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="background-noise-toggle">
+                        <span class="slider"></span>
+                        <span class="label">Background Noise</span>
+                    </label>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="radio-effects-toggle" checked>
+                        <span class="slider"></span>
+                        <span class="label">Radio Audio Effects</span>
+                    </label>
+                </div>
+
+                <!-- PTT Button -->
+                <div class="ptt-section">
+                    <button id="ptt-button" class="ptt-button">
+                        <div class="ptt-text">
+                            <span>PUSH</span>
+                            <span>TO</span>
+                            <span>TALK</span>
+                        </div>
+                    </button>
+                    <p class="ptt-hint">Hold button or press SPACEBAR to transmit</p>
+                </div>
+
+                <!-- Volume Control -->
+                <div class="volume-section">
+                    <label for="volume-slider">Volume</label>
+                    <input type="range" id="volume-slider" min="0" max="100" value="75">
+                </div>
+            </div>
+
+            <!-- Activity Log -->
+            <div class="activity-section">
+                <h3>Activity Log</h3>
+                <div id="activity-log" class="activity-log">
+                    <div class="log-entry">System: Radio network initialized</div>
+                </div>
+            </div>
+        </main>
+
+        <footer>
+            <button id="preset-messages-button" class="btn btn-secondary">Preset Messages</button>
+            <button id="exit-button" class="btn btn-danger">Exit Network</button>
+        </footer>
+    </div>
+
+    <!-- Preset Messages Modal -->
+    <div id="preset-messages-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Preset Messages</h2>
+                <button id="close-modal" class="close-button">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="api-key-section">
+                    <label for="openai-key">OpenAI API Key</label>
+                    <input type="password" id="openai-key" placeholder="sk-...">
+                </div>
+                
+                <div class="voice-selection">
+                    <label for="voice-select">Voice Selection</label>
+                    <select id="voice-select">
+                        <option value="alloy">Alloy</option>
+                        <option value="echo">Echo</option>
+                        <option value="fable">Fable</option>
+                        <option value="onyx">Onyx</option>
+                        <option value="nova">Nova</option>
+                        <option value="shimmer">Shimmer</option>
+                    </select>
+                </div>
+
+                <div class="preset-messages-list">
+                    <h3>Preset Messages</h3>
+                    <div id="preset-list"></div>
+                    <div class="add-preset">
+                        <input type="text" id="new-preset" placeholder="New Preset Message">
+                        <button id="add-preset-button" class="btn btn-primary">Add Preset</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="app.js"></script>
 </body>
 </html>
