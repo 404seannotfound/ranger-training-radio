@@ -1,0 +1,36 @@
+# Node dependencies
+node_modules/
+
+# Local environment and config
+.env
+*.env
+
+# SSL certificates (local only, not for cloud)
+*.pem
+server-key.pem
+server-cert.pem
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Mac system files
+.DS_Store
+
+# Log files
+*.log
+
+# VSCode and editor settings
+.vscode/
+.idea/
+
+# Build artifacts
+dist/
+build/
+
+# OS junk
+Thumbs.db
+
+# Ignore local test audio
+*.wav
+*.webm 
