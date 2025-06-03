@@ -1,4 +1,4 @@
- South America way to us// Configuration
+// Configuration
 const BACKEND_URL = typeof window !== 'undefined' && window.BACKEND_URL ? window.BACKEND_URL : 'https://localhost:3000';
 
 // Audio context and nodes

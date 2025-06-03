@@ -1,9 +1,6 @@
 # Node dependencies
 node_modules/
 
-# Local environment and config
-.env
-*.env
 
 # SSL certificates (local only, not for cloud)
 *.pem
