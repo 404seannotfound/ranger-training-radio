@@ -14,13 +14,17 @@ const server = http.createServer(app);
 // Configure Socket.IO with CORS
 const io = socketIO(server, {
     cors: {
-        origin: process.env.FRONTEND_URL || "*",
+        origin: "https://ranger-training-radio.onrender.com",
         methods: ["GET", "POST"]
     }
 });
 
 // Middleware
-app.use(cors());
+app.use(cors({
+    origin: "https://ranger-training-radio.onrender.com",
+    methods: ["GET", "POST"],
+    credentials: true
+}));
 app.use(express.json());
 app.use(express.static('public'));
 

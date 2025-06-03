@@ -2,7 +2,7 @@
 // Fixed version with proper login state management
 
 // Configuration
-const BACKEND_URL = 'https://ranger-training-radio.onrender.com'; // Your deployed backend
+const BACKEND_URL = window.BACKEND_URL;
 
 // Global variables
 let socket = null;
