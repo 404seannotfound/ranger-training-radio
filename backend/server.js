@@ -14,14 +14,20 @@ const server = http.createServer(app);
 // Configure Socket.IO with CORS
 const io = socketIO(server, {
     cors: {
-        origin: "https://ranger-training-radio.onrender.com",
+        origin: [
+            "https://ranger-radio.onrender.com",
+            "http://localhost:3000"
+        ],
         methods: ["GET", "POST"]
     }
 });
 
 // Middleware
 app.use(cors({
-    origin: "https://ranger-training-radio.onrender.com",
+    origin: [
+        "https://ranger-radio.onrender.com",
+        "http://localhost:3000"
+    ],
     methods: ["GET", "POST"],
     credentials: true
 }));
