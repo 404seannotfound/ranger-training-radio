@@ -4,6 +4,8 @@
 // Configuration
 const BACKEND_URL = window.BACKEND_URL;
 
+console.log('BACKEND_URL configured as:', BACKEND_URL);
+
 // Global variables
 let socket = null;
 let isConnected = false;
@@ -129,13 +131,22 @@ function connectToServer() {
         socket.disconnect();
     }
     
+    console.log('Attempting to connect to:', BACKEND_URL);
+    addToActivityLog(`Connecting to ${BACKEND_URL}...`);
+    
     socket = io(BACKEND_URL, {
         transports: ['websocket', 'polling']
     });
     
     socket.on('connect', () => {
         console.log('Connected to server');
+        addToActivityLog('Connected to server, joining with callsign: ' + rangerCallsign);
         socket.emit('join', { callsign: rangerCallsign });
+    });
+    
+    socket.on('connect_error', (error) => {
+        console.error('Connection error:', error);
+        addToActivityLog('Connection failed: ' + error.message);
     });
     
     socket.on('joined', (data) => {
