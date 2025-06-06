@@ -55,6 +55,9 @@ const effectsToggles = {
 document.addEventListener('DOMContentLoaded', () => {
     setupEventListeners();
     initializeAudioContext();
+    
+    // Start connection monitoring
+    startConnectionMonitoring();
 });
 
 // Setup event listeners
@@ -68,32 +71,46 @@ function setupEventListeners() {
     // PTT button events - improved with better cleanup
     pttButton.addEventListener('mousedown', (e) => {
         e.preventDefault();
-        startTransmission();
+        if (isConnected && !isTransmitting) {
+            startTransmission();
+        }
     });
     
     pttButton.addEventListener('mouseup', (e) => {
         e.preventDefault();
-        stopTransmission();
+        if (isTransmitting) {
+            stopTransmission();
+        }
     });
     
     pttButton.addEventListener('mouseleave', (e) => {
         e.preventDefault();
-        stopTransmission(); // Always stop when mouse leaves button
+        if (isTransmitting) {
+            console.log('🐭 Mouse left PTT button - stopping transmission');
+            stopTransmission();
+        }
     });
     
     pttButton.addEventListener('touchstart', (e) => {
         e.preventDefault();
-        startTransmission();
+        if (isConnected && !isTransmitting) {
+            startTransmission();
+        }
     });
     
     pttButton.addEventListener('touchend', (e) => {
         e.preventDefault();
-        stopTransmission();
+        if (isTransmitting) {
+            stopTransmission();
+        }
     });
     
     pttButton.addEventListener('touchcancel', (e) => {
         e.preventDefault();
-        stopTransmission(); // Stop on touch cancel
+        if (isTransmitting) {
+            console.log('📱 Touch cancelled - stopping transmission');
+            stopTransmission();
+        }
     });
     
     // Global keyboard PTT (spacebar) - improved handling
@@ -114,21 +131,25 @@ function setupEventListeners() {
     // Window focus/blur events - stop transmission if window loses focus
     window.addEventListener('blur', () => {
         if (isTransmitting) {
-            console.log('Window lost focus, stopping transmission');
+            console.log('👁️ Window lost focus - stopping transmission');
             stopTransmission();
         }
     });
     
-    window.addEventListener('beforeunload', () => {
+    // Handle page unload - ensure we clean up properly
+    window.addEventListener('beforeunload', (e) => {
         if (isTransmitting) {
+            console.log('🚪 Page unloading - stopping transmission');
             stopTransmission();
+            // Give it a moment to send the event
+            e.returnValue = "Transmission in progress...";
         }
     });
     
     // Document visibility change - stop transmission if tab becomes hidden
     document.addEventListener('visibilitychange', () => {
         if (document.hidden && isTransmitting) {
-            console.log('Tab became hidden, stopping transmission');
+            console.log('👁️‍🗨️ Tab became hidden - stopping transmission');
             stopTransmission();
         }
     });
@@ -136,7 +157,7 @@ function setupEventListeners() {
     // Mouse global events to catch mouse release outside the button
     document.addEventListener('mouseup', (e) => {
         if (isTransmitting && e.target !== pttButton) {
-            console.log('Mouse released outside PTT button, stopping transmission');
+            console.log('🐭 Mouse released outside PTT button - stopping transmission');
             stopTransmission();
         }
     });
@@ -229,14 +250,23 @@ function connectToServer() {
     });
     
     socket.on('connect', () => {
-        console.log('Connected to server');
+        console.log('✅ Connected to server');
+        addToActivityLog(`Connecting to ${BACKEND_URL}...`);
         addToActivityLog('Connected to server, joining with callsign: ' + rangerCallsign);
         socket.emit('join', { callsign: rangerCallsign });
     });
     
     socket.on('connect_error', (error) => {
-        console.error('Connection error:', error);
+        console.error('❌ Connection error:', error);
         addToActivityLog('Connection failed: ' + error.message);
+        
+        // If we were transmitting when connection failed, stop
+        if (isTransmitting) {
+            console.log('Connection failed during transmission - stopping');
+            isTransmitting = false; // Set directly since we can't notify server
+            updateStatus('OFFLINE');
+            pttButton.classList.remove('transmitting');
+        }
     });
     
     socket.on('joined', (data) => {
@@ -257,11 +287,36 @@ function connectToServer() {
         exitNetwork();
     });
     
-    socket.on('disconnect', () => {
-        console.log('Disconnected from server');
+    socket.on('disconnect', (reason) => {
+        console.log('❌ Disconnected from server:', reason);
         isConnected = false;
         updateStatus('OFFLINE');
-        addToActivityLog('Disconnected from radio network');
+        addToActivityLog('Disconnected from radio network: ' + reason);
+        
+        // If we were transmitting when disconnected, clean up locally
+        if (isTransmitting) {
+            console.log('Disconnected during transmission - cleaning up');
+            isTransmitting = false;
+            pttButton.classList.remove('transmitting');
+            
+            // Clean up audio resources
+            try {
+                if (audioStream) {
+                    audioStream.getTracks().forEach(track => track.stop());
+                    audioStream = null;
+                }
+                if (audioProcessor) {
+                    audioProcessor.disconnect();
+                    audioProcessor = null;
+                }
+                if (microphoneSource) {
+                    microphoneSource.disconnect();
+                    microphoneSource = null;
+                }
+            } catch (e) {
+                console.warn('Error cleaning up audio during disconnect:', e);
+            }
+        }
     });
     
     socket.on('transmission-start', (data) => {
@@ -625,18 +680,27 @@ function stopTransmission() {
         return;
     }
     
-    console.log('Stopping transmission...');
+    console.log('🛑 Stopping transmission...');
     
-    // Clear failsafe timeout
+    // Clear failsafe timeout first
     if (transmissionTimeout) {
         clearTimeout(transmissionTimeout);
         transmissionTimeout = null;
+        console.log('Cleared transmission timeout');
     }
     
-    // Set state FIRST to prevent race conditions
+    // Set state FIRST to prevent race conditions and multiple calls
     isTransmitting = false;
     updateStatus('READY');
     pttButton.classList.remove('transmitting');
+    
+    // IMMEDIATELY notify server we're stopping - this is critical
+    if (socket && isConnected) {
+        console.log('📡 Sending transmission-end to server');
+        socket.emit('transmission-end');
+    } else {
+        console.warn('⚠️ Cannot send transmission-end - socket not connected');
+    }
     
     // Save recording to localStorage
     if (currentRecording && currentRecording.audioData.length > 0) {
@@ -661,10 +725,13 @@ function stopTransmission() {
     
     currentRecording = null;
     
-    // Clean up audio processing
+    // Clean up audio processing (do this AFTER notifying server)
+    console.log('🧹 Cleaning up audio processing...');
+    
     if (audioProcessor) {
         try {
             audioProcessor.disconnect();
+            console.log('Disconnected audio processor');
         } catch (e) {
             console.warn('Error disconnecting audio processor:', e);
         }
@@ -674,18 +741,19 @@ function stopTransmission() {
     if (microphoneSource) {
         try {
             microphoneSource.disconnect();
+            console.log('Disconnected microphone source');
         } catch (e) {
             console.warn('Error disconnecting microphone source:', e);
         }
         microphoneSource = null;
     }
     
-    // Stop audio stream
+    // Stop audio stream last
     if (audioStream) {
         try {
             audioStream.getTracks().forEach(track => {
                 track.stop();
-                console.log('Stopped audio track:', track.kind);
+                console.log('Stopped audio track:', track.kind, track.readyState);
             });
         } catch (e) {
             console.warn('Error stopping audio tracks:', e);
@@ -693,21 +761,14 @@ function stopTransmission() {
         audioStream = null;
     }
     
-    // Notify server AFTER cleanup
-    if (socket && isConnected) {
-        socket.emit('transmission-end');
-    }
-    
-    // Play roger beep
+    // Play roger beep and squelch tail
     playRogerBeep();
-    
-    // Play squelch tail
     setTimeout(() => {
         playSquelchTail();
     }, 200);
     
     addToActivityLog(`${rangerCallsign} ended transmission`);
-    console.log('Transmission stopped successfully');
+    console.log('✅ Transmission stopped successfully');
 }
 
 // Update status indicator
@@ -1005,4 +1066,29 @@ async function testMicrophone() {
         addToActivityLog('Microphone test failed: ' + error.message);
         alert('Unable to access microphone for testing: ' + error.message);
     }
+}
+
+// Monitor connection health
+function startConnectionMonitoring() {
+    setInterval(() => {
+        // Check if we think we're connected but socket is actually disconnected
+        if (isConnected && socket && !socket.connected) {
+            console.warn('⚠️ Connection state mismatch detected - we think we\'re connected but socket is disconnected');
+            isConnected = false;
+            updateStatus('OFFLINE');
+            
+            // If transmitting, stop it
+            if (isTransmitting) {
+                console.log('Connection lost during transmission - stopping');
+                stopTransmission();
+            }
+        }
+        
+        // Check if we're transmitting but have no audio stream
+        if (isTransmitting && !audioStream) {
+            console.warn('⚠️ Transmitting but no audio stream - stopping transmission');
+            stopTransmission();
+        }
+        
+    }, 2000); // Check every 2 seconds
 }
