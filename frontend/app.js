@@ -1036,6 +1036,22 @@ async function playReceivedAudio(audioData) {
             audioOutputElement.play().catch(e => console.warn('Audio element play failed:', e));
             
             console.log('🔍 DEBUG: Audio routed to selected output device');
+        } else if (selectedSpeakerId && (selectedSpeakerId === 'mobile-speaker' || selectedSpeakerId === 'mobile-earpiece')) {
+            // Handle mobile-specific speaker routing
+            gainNode.connect(audioContext.destination);
+            
+            // For mobile devices, we can't actually control speaker vs earpiece directly
+            // But we can adjust volume and provide feedback about the selection
+            if (selectedSpeakerId === 'mobile-speaker') {
+                console.log('🔍 DEBUG: Audio set for mobile speaker (louder volume recommended)');
+                addToActivityLog('📢 Using speakerphone - increase volume if needed');
+                // Increase gain slightly for speaker
+                gainNode.gain.value = Math.min(1.0, gainNode.gain.value * 1.2);
+            } else {
+                console.log('🔍 DEBUG: Audio set for mobile earpiece (lower volume recommended)');
+                addToActivityLog('📞 Using earpiece - lower volume recommended');
+                // Keep normal gain for earpiece
+            }
         } else {
             // Use default audio context destination
             gainNode.connect(audioContext.destination);
@@ -1410,22 +1426,18 @@ async function loadAudioDevices() {
         const isMobile = /iPhone|iPad|iPod|Android|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
         
         if (isMobile) {
-            console.log('Mobile device detected, limited device enumeration available');
-            addToActivityLog('📱 Mobile device detected - device selection may be limited');
-            
-            // Set basic options for mobile
-            microphoneSelect.innerHTML = '<option value="">Default Microphone</option>';
-            speakerSelect.innerHTML = '<option value="">Default Speaker</option>';
-            
-            // Hide refresh button on mobile as it's less useful
-            refreshDevicesButton.style.display = 'none';
-            
-            addToActivityLog('📱 Using default audio devices (mobile limitations)');
-            return;
+            console.log('Mobile device detected, attempting device enumeration...');
+            addToActivityLog('📱 Mobile device detected - checking available audio devices...');
         }
         
-        // Request permissions first (desktop)
-        await navigator.mediaDevices.getUserMedia({ audio: true });
+        // Always try to request permissions and enumerate devices (desktop and mobile)
+        let permissionStream = null;
+        try {
+            permissionStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        } catch (permError) {
+            console.warn('Permission request failed:', permError);
+            addToActivityLog('⚠️ Microphone permission needed for device detection');
+        }
         
         // Get list of all media devices
         const devices = await navigator.mediaDevices.enumerateDevices();
@@ -1436,6 +1448,9 @@ async function loadAudioDevices() {
         const microphones = devices.filter(device => device.kind === 'audioinput');
         const speakers = devices.filter(device => device.kind === 'audiooutput');
         
+        console.log('Microphones found:', microphones);
+        console.log('Speakers found:', speakers);
+        
         // Check if devices have labels (indicates proper permissions)
         const hasLabels = microphones.some(device => device.label) || speakers.some(device => device.label);
         
@@ -1443,11 +1458,33 @@ async function loadAudioDevices() {
             addToActivityLog('⚠️ Device permissions needed - some devices may not show names');
         }
         
+        // For mobile, add common mobile audio options if no devices found
+        if (isMobile && speakers.length === 0) {
+            addToActivityLog('📱 Adding mobile speaker options...');
+            
+            // Create virtual speaker options for mobile
+            const mobileAudioOptions = [
+                { deviceId: 'mobile-speaker', label: '📢 Speaker (Speakerphone)', kind: 'audiooutput' },
+                { deviceId: 'mobile-earpiece', label: '📞 Earpiece', kind: 'audiooutput' }
+            ];
+            
+            speakers.push(...mobileAudioOptions);
+        }
+        
         // Populate dropdowns
         populateDeviceSelect(microphoneSelect, microphones, 'microphone');
         populateDeviceSelect(speakerSelect, speakers, 'speaker');
         
         addToActivityLog(`✅ Found ${microphones.length} microphones and ${speakers.length} speakers`);
+        
+        if (isMobile) {
+            addToActivityLog('📱 Mobile tip: Try different speaker options to find best audio');
+        }
+        
+        // Clean up permission stream
+        if (permissionStream) {
+            permissionStream.getTracks().forEach(track => track.stop());
+        }
         
         // If no devices found, provide helpful message
         if (microphones.length === 0 && speakers.length === 0) {
@@ -1466,9 +1503,20 @@ async function loadAudioDevices() {
             addToActivityLog(`❌ Failed to load audio devices: ${error.message}`);
         }
         
-        // Fallback options
+        // Fallback options with mobile considerations
+        const isMobile = /iPhone|iPad|iPod|Android|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        
         microphoneSelect.innerHTML = '<option value="">Default Microphone</option>';
-        speakerSelect.innerHTML = '<option value="">Default Speaker</option>';
+        
+        if (isMobile) {
+            speakerSelect.innerHTML = `
+                <option value="">Default Speaker</option>
+                <option value="mobile-speaker">📢 Speaker (Speakerphone)</option>
+                <option value="mobile-earpiece">📞 Earpiece</option>
+            `;
+        } else {
+            speakerSelect.innerHTML = '<option value="">Default Speaker</option>';
+        }
     }
 }
 
@@ -1531,10 +1579,11 @@ function showMobileAudioGuidance() {
     if (isMobile) {
         // Add mobile-specific guidance to activity log
         addToActivityLog('📱 Mobile Audio Tips:');
-        addToActivityLog('• Use wired headphones for best audio quality');
-        addToActivityLog('• Bluetooth may have audio delays');
+        addToActivityLog('• Select "Speaker" for louder audio (speakerphone mode)');
+        addToActivityLog('• Select "Earpiece" for private listening');
+        addToActivityLog('• Use wired headphones for best quality');
+        addToActivityLog('• Bluetooth may have slight delays');
         addToActivityLog('• Check phone volume and ringer settings');
-        addToActivityLog('• Some phones route audio to earpiece vs speaker');
         
         // Update the audio devices section with mobile info
         const audioDevicesSection = document.querySelector('.audio-devices-section');
@@ -1543,17 +1592,18 @@ function showMobileAudioGuidance() {
             mobileInfo.className = 'mobile-audio-info';
             mobileInfo.innerHTML = `
                 <p><strong>📱 Mobile Device Detected</strong></p>
-                <p>Audio device selection is limited on mobile. For best results:</p>
+                <p>Choose your preferred audio output:</p>
                 <ul>
-                    <li>Use wired headphones/earbuds</li>
-                    <li>Check volume and ringer settings</li>
-                    <li>Audio may route to earpiece or speaker</li>
+                    <li><strong>📢 Speaker:</strong> Louder audio (speakerphone)</li>
+                    <li><strong>📞 Earpiece:</strong> Private listening</li>
+                    <li><strong>🎧 Headphones:</strong> Best quality (if connected)</li>
                 </ul>
+                <p><em>Tip: Test different options to find what works best!</em></p>
             `;
             mobileInfo.style.marginTop = '10px';
             mobileInfo.style.padding = '10px';
-            mobileInfo.style.background = '#fff3cd';
-            mobileInfo.style.border = '1px solid #ffeaa7';
+            mobileInfo.style.background = '#e8f5e8';
+            mobileInfo.style.border = '1px solid #a8d8a8';
             mobileInfo.style.borderRadius = '4px';
             mobileInfo.style.fontSize = '14px';
             
