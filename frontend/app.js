@@ -308,6 +308,17 @@ function connectToServer() {
         }
     });
     
+    socket.on('channel-cleared', (data) => {
+        addToActivityLog('🔧 ' + data.message);
+        console.log('Channel cleared by admin:', data.message);
+        
+        // If we were somehow stuck transmitting, clear it
+        if (isTransmitting) {
+            console.log('Clearing stuck transmission due to channel clear');
+            stopTransmission();
+        }
+    });
+    
     socket.on('user-list', (users) => {
         console.log('Active users:', users);
     });

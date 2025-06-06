@@ -98,12 +98,17 @@ io.on('connection', (socket) => {
         const ranger = connectedRangers.get(socket.id);
         
         if (!ranger) {
+            console.log(`❌ Transmission start failed - not authenticated: ${socket.id}`);
             socket.emit('error', { message: 'Not authenticated' });
             return;
         }
         
+        console.log(`🎙️ ${ranger.callsign} requesting to start transmission`);
+        console.log(`📊 Current channel state - Active transmissions: ${activeTransmissions.size}, List: [${Array.from(activeTransmissions).map(id => connectedRangers.get(id)?.callsign || id).join(', ')}]`);
+        
         // Check if channel is busy
         if (activeTransmissions.size > 0) {
+            console.log(`🚫 Channel busy - ${ranger.callsign} denied transmission`);
             socket.emit('channel-busy');
             return;
         }
@@ -112,13 +117,13 @@ io.on('connection', (socket) => {
         ranger.isTransmitting = true;
         activeTransmissions.add(socket.id);
         
+        console.log(`✅ ${ranger.callsign} started transmitting (Active: ${activeTransmissions.size})`);
+        
         // Notify all clients about transmission start
         io.emit('transmission-start', {
             callsign: ranger.callsign,
             timestamp: new Date()
         });
-        
-        console.log(`${ranger.callsign} started transmitting`);
     });
     
     // Handle audio data transmission
@@ -126,6 +131,7 @@ io.on('connection', (socket) => {
         const ranger = connectedRangers.get(socket.id);
         
         if (!ranger || !ranger.isTransmitting) {
+            // Don't spam logs for this, just silently ignore
             return;
         }
         
@@ -133,6 +139,11 @@ io.on('connection', (socket) => {
         socket.broadcast.emit('audio-data', {
             callsign: ranger.callsign,
             audio: data.audio,
+            sampleRate: data.sampleRate,
+            hasAudio: data.hasAudio,
+            debugLevel: data.debugLevel,
+            maxLevel: data.maxLevel,
+            chunkNumber: data.chunkNumber,
             timestamp: new Date()
         });
     });
@@ -142,20 +153,24 @@ io.on('connection', (socket) => {
         const ranger = connectedRangers.get(socket.id);
         
         if (!ranger) {
+            console.log(`❌ Transmission end failed - ranger not found: ${socket.id}`);
             return;
         }
         
-        // Mark ranger as not transmitting
+        console.log(`📻 ${ranger.callsign} requesting to end transmission`);
+        
+        // Always clean up transmission state, even if they weren't marked as transmitting
+        const wasTransmitting = ranger.isTransmitting;
         ranger.isTransmitting = false;
         activeTransmissions.delete(socket.id);
+        
+        console.log(`✅ ${ranger.callsign} ended transmission (was transmitting: ${wasTransmitting}, Active now: ${activeTransmissions.size})`);
         
         // Notify all clients about transmission end
         io.emit('transmission-end', {
             callsign: ranger.callsign,
             timestamp: new Date()
         });
-        
-        console.log(`${ranger.callsign} ended transmission`);
     });
     
     // Handle preset message transmission (TTS)
@@ -241,6 +256,77 @@ app.get('/health', (req, res) => {
         timestamp: new Date()
     });
 });
+
+// Debug endpoint to show current state
+app.get('/debug', (req, res) => {
+    const rangers = Array.from(connectedRangers.entries()).map(([id, ranger]) => ({
+        id,
+        callsign: ranger.callsign,
+        isTransmitting: ranger.isTransmitting,
+        joinedAt: ranger.joinedAt
+    }));
+    
+    const transmissions = Array.from(activeTransmissions).map(id => ({
+        id,
+        callsign: connectedRangers.get(id)?.callsign || 'Unknown'
+    }));
+    
+    res.json({
+        connectedRangers: rangers,
+        activeTransmissions: transmissions,
+        channelBusy: activeTransmissions.size > 0,
+        timestamp: new Date()
+    });
+});
+
+// Force clear channel (emergency endpoint)
+app.post('/clear-channel', (req, res) => {
+    console.log('🚨 Emergency channel clear requested');
+    
+    // Clear all active transmissions
+    activeTransmissions.clear();
+    
+    // Mark all rangers as not transmitting
+    for (const ranger of connectedRangers.values()) {
+        if (ranger.isTransmitting) {
+            console.log(`🔧 Force clearing transmission for ${ranger.callsign}`);
+            ranger.isTransmitting = false;
+        }
+    }
+    
+    // Notify all clients that channel is clear
+    io.emit('channel-cleared', {
+        message: 'Channel has been cleared by admin',
+        timestamp: new Date()
+    });
+    
+    console.log('✅ Channel cleared - all transmissions stopped');
+    
+    res.json({
+        success: true,
+        message: 'Channel cleared',
+        activeTransmissions: activeTransmissions.size
+    });
+});
+
+// Periodic cleanup function to handle stuck transmissions
+setInterval(() => {
+    // Check for any stuck transmissions (optional safety check)
+    const stuckTransmissions = [];
+    
+    for (const socketId of activeTransmissions) {
+        const ranger = connectedRangers.get(socketId);
+        if (!ranger) {
+            // Transmission exists but ranger is gone
+            stuckTransmissions.push(socketId);
+        }
+    }
+    
+    if (stuckTransmissions.length > 0) {
+        console.log(`🔧 Cleaning up ${stuckTransmissions.length} stuck transmissions`);
+        stuckTransmissions.forEach(id => activeTransmissions.delete(id));
+    }
+}, 30000); // Check every 30 seconds
 
 // Get connected rangers
 app.get('/api/rangers', (req, res) => {
