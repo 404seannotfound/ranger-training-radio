@@ -166,11 +166,6 @@ function setupEventListeners() {
     volumeSlider.addEventListener('input', (e) => {
         const volume = e.target.value / 100;
         setMasterVolume(volume);
-        
-        // Test audio playback when volume changes (optional)
-        if (volume > 0.1) {
-            playTestTone();
-        }
     });
     
     // Preset messages
@@ -821,23 +816,10 @@ function playBusyTone() {
 }
 
 // Helper function to play tones
-async function playTone(frequency, duration, volume) {
-    if (!audioContext) {
-        console.warn('No audio context for tone playback');
-        return;
-    }
+function playTone(frequency, duration, volume) {
+    if (!audioContext) return;
     
     try {
-        // Ensure audio context is running
-        if (audioContext.state === 'suspended') {
-            await audioContext.resume();
-        }
-        
-        if (audioContext.state !== 'running') {
-            console.warn('Audio context not running for tone:', audioContext.state);
-            return;
-        }
-        
         const oscillator = audioContext.createOscillator();
         const gainNode = audioContext.createGain();
         
@@ -845,14 +827,10 @@ async function playTone(frequency, duration, volume) {
         gainNode.connect(audioContext.destination);
         
         oscillator.frequency.value = frequency;
-        const effectiveVolume = Math.max(0.05, volume * (volumeSlider.value / 100)); // Minimum volume
-        gainNode.gain.value = effectiveVolume;
+        gainNode.gain.value = volume * (volumeSlider.value / 100);
         
-        const startTime = audioContext.currentTime;
-        oscillator.start(startTime);
-        oscillator.stop(startTime + duration);
-        
-        console.log(`🎵 Playing tone: ${frequency}Hz for ${duration}s at volume ${effectiveVolume.toFixed(2)}`);
+        oscillator.start();
+        oscillator.stop(audioContext.currentTime + duration);
         
     } catch (error) {
         console.error('Error playing tone:', error);
@@ -860,23 +838,10 @@ async function playTone(frequency, duration, volume) {
 }
 
 // Helper function to play noise
-async function playNoise(duration, volume) {
-    if (!audioContext) {
-        console.warn('No audio context for noise playback');
-        return;
-    }
+function playNoise(duration, volume) {
+    if (!audioContext) return;
     
     try {
-        // Ensure audio context is running
-        if (audioContext.state === 'suspended') {
-            await audioContext.resume();
-        }
-        
-        if (audioContext.state !== 'running') {
-            console.warn('Audio context not running for noise:', audioContext.state);
-            return;
-        }
-        
         const bufferSize = audioContext.sampleRate * duration;
         const buffer = audioContext.createBuffer(1, bufferSize, audioContext.sampleRate);
         const data = buffer.getChannelData(0);
@@ -892,13 +857,9 @@ async function playNoise(duration, volume) {
         source.connect(gainNode);
         gainNode.connect(audioContext.destination);
         
-        const effectiveVolume = Math.max(0.05, volume * (volumeSlider.value / 100)); // Minimum volume
-        gainNode.gain.value = effectiveVolume;
+        gainNode.gain.value = volume * (volumeSlider.value / 100);
         
-        const startTime = audioContext.currentTime;
-        source.start(startTime);
-        
-        console.log(`🔊 Playing noise for ${duration}s at volume ${effectiveVolume.toFixed(2)}`);
+        source.start();
         
     } catch (error) {
         console.error('Error playing noise:', error);
@@ -919,23 +880,12 @@ async function playReceivedAudio(audioData) {
             await audioContext.resume();
         }
         
-        if (audioContext.state !== 'running') {
-            console.error('❌ Audio context not running, state:', audioContext.state);
-            return;
-        }
-        
         const audioLength = audioData.audio.length;
         const hasAudioFlag = audioData.hasAudio;
         const maxLevel = audioData.maxLevel || 0;
         const chunkNumber = audioData.chunkNumber || 0;
         
         console.log(`🔊 Received from ${audioData.callsign}: Chunk #${chunkNumber}, Length: ${audioLength}, HasAudio: ${hasAudioFlag}, MaxLevel: ${maxLevel?.toFixed(6)}`);
-        
-        // Skip empty or very small audio chunks
-        if (!audioData.audio || audioLength < 100) {
-            console.log('⏭️ Skipping tiny/empty audio chunk');
-            return;
-        }
         
         // Convert received PCM data back to audio buffer
         const pcmArray = new Int16Array(audioData.audio);
@@ -954,12 +904,6 @@ async function playReceivedAudio(audioData) {
         
         console.log(`🎵 Received audio levels - Avg: ${receivedAvg.toFixed(1)}, Max: ${receivedMax} (${normalizedMax.toFixed(6)} normalized)`);
         
-        // Skip completely silent audio
-        if (normalizedMax < 0.0001) {
-            console.log('🔇 Skipping silent audio chunk');
-            return;
-        }
-        
         // Create audio buffer
         const audioBuffer = audioContext.createBuffer(1, pcmArray.length, sampleRate);
         const bufferData = audioBuffer.getChannelData(0);
@@ -969,33 +913,19 @@ async function playReceivedAudio(audioData) {
             bufferData[i] = pcmArray[i] / 32767;
         }
         
-        // Create source and gain node
+        // Create source and play
         const source = audioContext.createBufferSource();
         const gainNode = audioContext.createGain();
         
-        // Set up audio chain
         source.buffer = audioBuffer;
         source.connect(gainNode);
         gainNode.connect(audioContext.destination);
         
-        // Set volume - ensure it's not zero
-        const volume = Math.max(0.1, volumeSlider.value / 100); // Minimum 10% volume
-        gainNode.gain.value = volume;
+        gainNode.gain.value = volumeSlider.value / 100;
         
-        // Add event listeners for debugging
-        source.onended = () => {
-            console.log(`🏁 Audio chunk finished playing from ${audioData.callsign}`);
-        };
+        source.start();
         
-        source.onerror = (error) => {
-            console.error(`❌ Audio source error from ${audioData.callsign}:`, error);
-        };
-        
-        // Start playback
-        const startTime = audioContext.currentTime;
-        source.start(startTime);
-        
-        console.log(`🎶 Started playing audio from ${audioData.callsign} at ${startTime.toFixed(3)}s, volume: ${volume.toFixed(2)}, duration: ${(audioBuffer.duration * 1000).toFixed(1)}ms`);
+        console.log(`🎶 Playing audio from ${audioData.callsign}, volume: ${gainNode.gain.value.toFixed(2)}`);
         
         // Log when we have significant audio content
         if (normalizedMax > 0.01) {
@@ -1006,17 +936,6 @@ async function playReceivedAudio(audioData) {
     } catch (error) {
         console.error('❌ Audio playback error:', error);
         addToActivityLog('Error playing received audio: ' + error.message);
-        
-        // Try to resume audio context if it failed
-        if (audioContext && audioContext.state !== 'running') {
-            console.log('🔧 Attempting to fix audio context...');
-            try {
-                await audioContext.resume();
-                console.log('✅ Audio context resumed after error');
-            } catch (resumeError) {
-                console.error('❌ Failed to resume audio context:', resumeError);
-            }
-        }
     }
 }
 
@@ -1028,10 +947,10 @@ function setMasterVolume(value) {
 }
 
 // Test audio playback
-async function playTestTone() {
+function playTestTone() {
     console.log('🔧 Playing test tone to verify audio...');
     try {
-        await playTone(800, 0.1, 0.3);
+        playTone(800, 0.1, 0.3);
     } catch (error) {
         console.error('Test tone failed:', error);
     }
