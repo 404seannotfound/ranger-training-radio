@@ -165,20 +165,36 @@ function initializeAudioContext() {
         window.AudioContext = window.AudioContext || window.webkitAudioContext;
         audioContext = new AudioContext();
         
-        console.log('Audio context initialized:', audioContext.state);
+        console.log('🎵 Audio context initialized:', audioContext.state);
         
         // Add click listener to resume audio context (required by browsers)
         document.addEventListener('click', async () => {
             if (audioContext && audioContext.state === 'suspended') {
                 await audioContext.resume();
-                console.log('Audio context resumed:', audioContext.state);
+                console.log('🎵 Audio context resumed:', audioContext.state);
             }
         }, { once: true });
         
     } catch (error) {
-        console.error('Web Audio API not supported:', error);
+        console.error('❌ Web Audio API not supported:', error);
         addToActivityLog('Error: Web Audio API not supported in this browser');
     }
+}
+
+// Ensure audio context is ready for transmission
+async function ensureAudioContextReady() {
+    if (!audioContext) {
+        console.log('🎵 Creating new audio context...');
+        initializeAudioContext();
+    }
+    
+    if (audioContext.state === 'suspended') {
+        console.log('🎵 Resuming audio context...');
+        await audioContext.resume();
+    }
+    
+    console.log('🎵 Audio context ready:', audioContext.state);
+    return audioContext.state === 'running';
 }
 
 // Join the radio network
@@ -251,8 +267,11 @@ function connectToServer() {
     socket.on('transmission-start', (data) => {
         if (data.callsign !== rangerCallsign) {
             updateStatus('RECEIVING');
-            addToActivityLog(`${data.callsign} is transmitting`);
+            addToActivityLog(`🎙️ ${data.callsign} started transmitting`);
             playAccessTone();
+            console.log('Receiving transmission from:', data.callsign);
+        } else {
+            console.log('Our own transmission start confirmed by server');
         }
     });
     
@@ -268,15 +287,25 @@ function connectToServer() {
     socket.on('transmission-end', (data) => {
         if (data.callsign !== rangerCallsign) {
             updateStatus('READY');
-            addToActivityLog(`${data.callsign} ended transmission`);
+            addToActivityLog(`📻 ${data.callsign} ended transmission`);
             playRogerBeep();
-            playSquelchTail();
+            setTimeout(() => playSquelchTail(), 200);
+            console.log('Transmission ended from:', data.callsign);
+        } else {
+            console.log('Our own transmission end confirmed by server');
+            updateStatus('READY');
         }
     });
     
     socket.on('channel-busy', () => {
+        addToActivityLog('🚫 Channel busy - someone else is transmitting');
         playBusyTone();
-        addToActivityLog('Channel busy - please wait');
+        
+        // Force stop our transmission attempt if we're trying to transmit
+        if (isTransmitting) {
+            console.log('Channel busy, stopping our transmission');
+            stopTransmission();
+        }
     });
     
     socket.on('user-list', (users) => {
@@ -330,15 +359,24 @@ async function startTransmission() {
         return;
     }
     
-    console.log('Starting transmission...');
+    console.log('🎙️ Starting NEW transmission...');
     
     try {
-        // Resume audio context if suspended
-        if (audioContext && audioContext.state === 'suspended') {
-            await audioContext.resume();
+        // Ensure audio context is ready
+        const audioReady = await ensureAudioContextReady();
+        if (!audioReady) {
+            throw new Error('Audio context failed to start');
         }
         
-        // Request microphone access
+        // Clean up any existing audio stream first
+        if (audioStream) {
+            console.log('Cleaning up existing audio stream...');
+            audioStream.getTracks().forEach(track => track.stop());
+            audioStream = null;
+        }
+        
+        // Request fresh microphone access for this transmission
+        console.log('Requesting fresh microphone access...');
         audioStream = await navigator.mediaDevices.getUserMedia({ 
             audio: {
                 echoCancellation: false,  // Disable for radio realism
@@ -348,7 +386,7 @@ async function startTransmission() {
             } 
         });
         
-        console.log('Microphone access granted');
+        console.log('✅ Fresh microphone access granted');
         console.log('Audio stream tracks:', audioStream.getTracks().map(t => ({
             kind: t.kind,
             enabled: t.enabled,
@@ -363,7 +401,7 @@ async function startTransmission() {
         
         // Set failsafe timeout to prevent stuck transmissions
         transmissionTimeout = setTimeout(() => {
-            console.warn('Transmission timeout reached, forcing stop');
+            console.warn('⚠️ Transmission timeout reached, forcing stop');
             addToActivityLog('Transmission timeout - automatically stopped');
             stopTransmission();
         }, maxTransmissionTime);
@@ -373,19 +411,22 @@ async function startTransmission() {
         
         // Play access tone
         playAccessTone();
-        addToActivityLog(`${rangerCallsign} is transmitting`);
+        addToActivityLog(`🎙️ ${rangerCallsign} is transmitting`);
         
-        // Start recording after access tone
+        // Start recording after access tone with fresh audio processing
         setTimeout(() => {
             if (isTransmitting && audioStream) {
+                console.log('Starting fresh audio recording...');
                 startRecording();
+            } else {
+                console.warn('Cannot start recording - transmission state changed or no audio stream');
             }
-        }, 200); // Shorter delay for more responsive recording
+        }, 200);
         
     } catch (error) {
-        console.error('Microphone access error:', error);
-        addToActivityLog('Error: Unable to access microphone');
-        alert('Unable to access microphone. Please check permissions.');
+        console.error('❌ Microphone access error:', error);
+        addToActivityLog('Error: Unable to access microphone - ' + error.message);
+        alert('Unable to access microphone. Please check permissions: ' + error.message);
         
         // Clean up on error
         isTransmitting = false;
@@ -401,13 +442,38 @@ async function startTransmission() {
 
 // Start recording audio
 function startRecording() {
-    if (!audioStream || !audioContext) return;
+    if (!audioStream || !audioContext) {
+        console.error('Missing audioStream or audioContext for recording');
+        return;
+    }
     
     try {
-        console.log('Setting up audio processing for recording...');
+        console.log('Setting up NEW audio processing for recording...');
         
-        // Create microphone source
+        // ALWAYS create fresh audio processing nodes
+        if (microphoneSource) {
+            console.log('Cleaning up existing microphone source');
+            try {
+                microphoneSource.disconnect();
+            } catch (e) {
+                console.warn('Error disconnecting old mic source:', e);
+            }
+            microphoneSource = null;
+        }
+        
+        if (audioProcessor) {
+            console.log('Cleaning up existing audio processor');
+            try {
+                audioProcessor.disconnect();
+            } catch (e) {
+                console.warn('Error disconnecting old processor:', e);
+            }
+            audioProcessor = null;
+        }
+        
+        // Create fresh microphone source
         microphoneSource = audioContext.createMediaStreamSource(audioStream);
+        console.log('Created new microphone source');
         
         // Initialize recording storage
         currentRecording = {
@@ -420,13 +486,18 @@ function startRecording() {
             sampleRate: audioContext.sampleRate
         };
         
-        // Create script processor for real-time audio processing
+        // Create NEW script processor for real-time audio processing
         audioProcessor = audioContext.createScriptProcessor(4096, 1, 1);
+        console.log('Created new audio processor');
         
         let audioDataCount = 0;
+        let totalAudioSent = 0;
         
         audioProcessor.onaudioprocess = (event) => {
-            if (!isTransmitting) return;
+            if (!isTransmitting) {
+                console.log('Not transmitting, skipping audio processing');
+                return;
+            }
             
             const inputBuffer = event.inputBuffer;
             const inputData = inputBuffer.getChannelData(0);
@@ -442,11 +513,15 @@ function startRecording() {
             const avgLevel = sum / inputData.length;
             
             // Check if we're getting actual audio data (lower threshold)
-            const hasAudio = inputData.some(sample => Math.abs(sample) > 0.0001);
+            const hasAudio = maxSample > 0.001; // Use max sample instead of any sample
             
             audioDataCount++;
+            if (hasAudio) {
+                totalAudioSent++;
+            }
+            
             if (audioDataCount % 50 === 0) { // Log every 50 chunks
-                console.log('Audio chunk', audioDataCount, '- Avg level:', avgLevel.toFixed(6), 'Max:', maxSample.toFixed(6), 'hasAudio:', hasAudio);
+                console.log(`📊 Audio chunk ${audioDataCount} - Avg: ${avgLevel.toFixed(6)}, Max: ${maxSample.toFixed(6)}, Voice: ${hasAudio}, Total voice chunks: ${totalAudioSent}`);
             }
             
             // Convert to 16-bit PCM
@@ -457,7 +532,7 @@ function startRecording() {
                 pcmData[i] = sample * 32767;
             }
             
-            // Store audio data for recording history (store all audio, not just when hasAudio)
+            // Store audio data for recording history
             if (currentRecording) {
                 currentRecording.audioData.push(...Array.from(pcmData));
             }
@@ -468,12 +543,15 @@ function startRecording() {
                     audio: Array.from(pcmData),
                     sampleRate: audioContext.sampleRate,
                     hasAudio: hasAudio,
-                    debugLevel: avgLevel
+                    debugLevel: avgLevel,
+                    maxLevel: maxSample,
+                    chunkNumber: audioDataCount
                 });
             }
         };
         
-        // Connect the audio processing chain - SIMPLER APPROACH
+        // Connect the audio processing chain with fresh connections
+        console.log('Connecting audio processing chain...');
         microphoneSource.connect(audioProcessor);
         
         // Connect to a gain node to keep the processor active but silent
@@ -482,11 +560,11 @@ function startRecording() {
         audioProcessor.connect(silentGain);
         silentGain.connect(audioContext.destination);
         
-        console.log('Real-time audio streaming started');
-        addToActivityLog('Audio processing active');
+        console.log('✅ Real-time audio streaming started with fresh processors');
+        addToActivityLog('🎤 Audio processing active');
         
     } catch (error) {
-        console.error('Audio processing setup error:', error);
+        console.error('❌ Audio processing setup error:', error);
         addToActivityLog('Error setting up audio processing: ' + error.message);
     }
 }
@@ -673,11 +751,29 @@ function playReceivedAudio(audioData) {
     if (!audioContext) return;
     
     try {
-        console.log('Received audio data from', audioData.callsign, 'hasAudio:', audioData.hasAudio, 'length:', audioData.audio.length);
+        const audioLength = audioData.audio.length;
+        const hasAudioFlag = audioData.hasAudio;
+        const maxLevel = audioData.maxLevel || 0;
+        const chunkNumber = audioData.chunkNumber || 0;
+        
+        console.log(`🔊 Received from ${audioData.callsign}: Chunk #${chunkNumber}, Length: ${audioLength}, HasAudio: ${hasAudioFlag}, MaxLevel: ${maxLevel?.toFixed(6)}`);
         
         // Convert received PCM data back to audio buffer
         const pcmArray = new Int16Array(audioData.audio);
         const sampleRate = audioData.sampleRate || 44100;
+        
+        // Calculate the actual audio levels in the received data
+        let receivedSum = 0;
+        let receivedMax = 0;
+        for (let i = 0; i < pcmArray.length; i++) {
+            const abs = Math.abs(pcmArray[i]);
+            receivedSum += abs;
+            receivedMax = Math.max(receivedMax, abs);
+        }
+        const receivedAvg = receivedSum / pcmArray.length;
+        const normalizedMax = receivedMax / 32767;
+        
+        console.log(`🎵 Received audio levels - Avg: ${receivedAvg.toFixed(1)}, Max: ${receivedMax} (${normalizedMax.toFixed(6)} normalized)`);
         
         // Create audio buffer
         const audioBuffer = audioContext.createBuffer(1, pcmArray.length, sampleRate);
@@ -700,13 +796,14 @@ function playReceivedAudio(audioData) {
         
         source.start();
         
-        // Only log when we have significant audio content
-        if (audioData.hasAudio) {
-            console.log('Playing audio with voice content');
+        // Log when we have significant audio content
+        if (normalizedMax > 0.01) {
+            console.log(`🗣️ Playing meaningful audio from ${audioData.callsign} (${normalizedMax.toFixed(3)} level)`);
+            addToActivityLog(`🔊 Receiving audio from ${audioData.callsign} (${normalizedMax.toFixed(3)} level)`);
         }
         
     } catch (error) {
-        console.error('Audio playback error:', error);
+        console.error('❌ Audio playback error:', error);
         addToActivityLog('Error playing received audio: ' + error.message);
     }
 }
