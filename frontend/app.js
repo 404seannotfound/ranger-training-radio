@@ -319,6 +319,43 @@ function connectToServer() {
         }
     });
     
+    socket.on('transmission-force-ended', (data) => {
+        addToActivityLog(`⚠️ Your transmission was automatically ended: ${data.reason}`);
+        console.log('Transmission force-ended by server:', data.reason);
+        
+        // Clean up our transmission state if we were transmitting
+        if (isTransmitting) {
+            console.log('Server force-ended our transmission, cleaning up local state');
+            isTransmitting = false;
+            updateStatus('READY');
+            pttButton.classList.remove('transmitting');
+            
+            // Clear timeout
+            if (transmissionTimeout) {
+                clearTimeout(transmissionTimeout);
+                transmissionTimeout = null;
+            }
+            
+            // Clean up audio processing without sending another transmission-end
+            if (audioProcessor) {
+                try { audioProcessor.disconnect(); } catch (e) {}
+                audioProcessor = null;
+            }
+            
+            if (microphoneSource) {
+                try { microphoneSource.disconnect(); } catch (e) {}
+                microphoneSource = null;
+            }
+            
+            if (audioStream) {
+                try {
+                    audioStream.getTracks().forEach(track => track.stop());
+                } catch (e) {}
+                audioStream = null;
+            }
+        }
+    });
+    
     socket.on('user-list', (users) => {
         console.log('Active users:', users);
     });

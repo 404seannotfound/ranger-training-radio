@@ -35,6 +35,12 @@ app.use(express.static('public'));
 // In-memory storage for connected rangers
 const connectedRangers = new Map();
 const activeTransmissions = new Set();
+const transmissionTimeouts = new Map(); // Track transmission timeouts
+const transmissionHeartbeats = new Map(); // Track last activity for each transmission
+
+// Configuration
+const TRANSMISSION_TIMEOUT = 35000; // 35 seconds max transmission time
+const HEARTBEAT_TIMEOUT = 5000; // 5 seconds without audio data = transmission ended
 
 // Socket.IO connection handling
 io.on('connection', (socket) => {
@@ -117,7 +123,16 @@ io.on('connection', (socket) => {
         ranger.isTransmitting = true;
         activeTransmissions.add(socket.id);
         
-        console.log(`✅ ${ranger.callsign} started transmitting (Active: ${activeTransmissions.size})`);
+        // Set up automatic timeout to end transmission
+        const timeoutId = setTimeout(() => {
+            console.log(`⏰ ${ranger.callsign} transmission timed out (${TRANSMISSION_TIMEOUT/1000}s)`);
+            forceEndTransmission(socket.id, 'timeout');
+        }, TRANSMISSION_TIMEOUT);
+        
+        transmissionTimeouts.set(socket.id, timeoutId);
+        transmissionHeartbeats.set(socket.id, Date.now());
+        
+        console.log(`✅ ${ranger.callsign} started transmitting (Active: ${activeTransmissions.size}) - timeout set for ${TRANSMISSION_TIMEOUT/1000}s`);
         
         // Notify all clients about transmission start
         io.emit('transmission-start', {
@@ -134,6 +149,9 @@ io.on('connection', (socket) => {
             // Don't spam logs for this, just silently ignore
             return;
         }
+        
+        // Update heartbeat - this person is actively transmitting
+        transmissionHeartbeats.set(socket.id, Date.now());
         
         // Broadcast audio to all other connected clients
         socket.broadcast.emit('audio-data', {
@@ -159,12 +177,10 @@ io.on('connection', (socket) => {
         
         console.log(`📻 ${ranger.callsign} requesting to end transmission`);
         
-        // Always clean up transmission state, even if they weren't marked as transmitting
-        const wasTransmitting = ranger.isTransmitting;
-        ranger.isTransmitting = false;
-        activeTransmissions.delete(socket.id);
+        // Clean up transmission
+        cleanupTransmission(socket.id);
         
-        console.log(`✅ ${ranger.callsign} ended transmission (was transmitting: ${wasTransmitting}, Active now: ${activeTransmissions.size})`);
+        console.log(`✅ ${ranger.callsign} ended transmission (Active now: ${activeTransmissions.size})`);
         
         // Notify all clients about transmission end
         io.emit('transmission-end', {
@@ -208,9 +224,10 @@ io.on('connection', (socket) => {
         const ranger = connectedRangers.get(socket.id);
         
         if (ranger) {
-            // Remove from active transmissions if transmitting
+            // Clean up any active transmission
             if (ranger.isTransmitting) {
-                activeTransmissions.delete(socket.id);
+                console.log(`🔌 ${ranger.callsign} disconnected while transmitting - cleaning up`);
+                cleanupTransmission(socket.id);
                 
                 // Notify others that transmission ended
                 io.emit('transmission-end', {
@@ -311,7 +328,9 @@ app.post('/clear-channel', (req, res) => {
 
 // Periodic cleanup function to handle stuck transmissions
 setInterval(() => {
-    // Check for any stuck transmissions (optional safety check)
+    const now = Date.now();
+    
+    // Check for any stuck transmissions (orphaned socket IDs)
     const stuckTransmissions = [];
     
     for (const socketId of activeTransmissions) {
@@ -323,10 +342,51 @@ setInterval(() => {
     }
     
     if (stuckTransmissions.length > 0) {
-        console.log(`🔧 Cleaning up ${stuckTransmissions.length} stuck transmissions`);
-        stuckTransmissions.forEach(id => activeTransmissions.delete(id));
+        console.log(`🔧 Cleaning up ${stuckTransmissions.length} orphaned transmissions`);
+        stuckTransmissions.forEach(id => {
+            cleanupTransmission(id);
+            // Notify clients that transmission mysteriously ended
+            io.emit('transmission-end', {
+                callsign: 'Unknown',
+                reason: 'cleanup',
+                timestamp: new Date()
+            });
+        });
     }
-}, 30000); // Check every 30 seconds
+    
+    // Check for stale heartbeats (no audio data received recently)
+    const staleTransmissions = [];
+    
+    for (const [socketId, lastHeartbeat] of transmissionHeartbeats.entries()) {
+        const timeSinceLastHeartbeat = now - lastHeartbeat;
+        
+        if (timeSinceLastHeartbeat > HEARTBEAT_TIMEOUT) {
+            const ranger = connectedRangers.get(socketId);
+            if (ranger && ranger.isTransmitting) {
+                console.log(`💔 ${ranger.callsign} heartbeat timeout (${timeSinceLastHeartbeat}ms since last audio)`);
+                staleTransmissions.push(socketId);
+            }
+        }
+    }
+    
+    // Force end stale transmissions
+    staleTransmissions.forEach(socketId => {
+        forceEndTransmission(socketId, 'no audio data');
+    });
+    
+    // Log current state if there are active transmissions
+    if (activeTransmissions.size > 0) {
+        const activeList = Array.from(activeTransmissions).map(id => {
+            const ranger = connectedRangers.get(id);
+            const lastHeartbeat = transmissionHeartbeats.get(id);
+            const timeSinceHeartbeat = lastHeartbeat ? now - lastHeartbeat : 'never';
+            return `${ranger?.callsign || id} (${typeof timeSinceHeartbeat === 'number' ? timeSinceHeartbeat + 'ms ago' : timeSinceHeartbeat})`;
+        });
+        
+        console.log(`📊 Active transmissions: ${activeList.join(', ')}`);
+    }
+    
+}, 3000); // Check every 3 seconds for more responsive cleanup
 
 // Get connected rangers
 app.get('/api/rangers', (req, res) => {
@@ -381,5 +441,61 @@ process.on('uncaughtException', (err) => {
 process.on('unhandledRejection', (reason, promise) => {
     console.error('Unhandled Rejection at:', promise, 'reason:', reason);
 });
+
+// Helper function to clean up transmission state
+function cleanupTransmission(socketId) {
+    const ranger = connectedRangers.get(socketId);
+    
+    if (ranger) {
+        ranger.isTransmitting = false;
+    }
+    
+    // Remove from active transmissions
+    activeTransmissions.delete(socketId);
+    
+    // Clear timeout if exists
+    const timeoutId = transmissionTimeouts.get(socketId);
+    if (timeoutId) {
+        clearTimeout(timeoutId);
+        transmissionTimeouts.delete(socketId);
+    }
+    
+    // Clear heartbeat tracking
+    transmissionHeartbeats.delete(socketId);
+    
+    console.log(`🧹 Cleaned up transmission for ${ranger?.callsign || socketId}`);
+}
+
+// Helper function to force end a transmission
+function forceEndTransmission(socketId, reason = 'unknown') {
+    const ranger = connectedRangers.get(socketId);
+    
+    if (!ranger) {
+        console.log(`⚠️ Cannot force end transmission - ranger not found: ${socketId}`);
+        return;
+    }
+    
+    console.log(`🚨 Force ending transmission for ${ranger.callsign} (reason: ${reason})`);
+    
+    // Clean up transmission state
+    cleanupTransmission(socketId);
+    
+    // Notify all clients that transmission ended
+    io.emit('transmission-end', {
+        callsign: ranger.callsign,
+        reason: reason,
+        timestamp: new Date()
+    });
+    
+    // Notify the transmitter specifically
+    const socket = io.sockets.sockets.get(socketId);
+    if (socket) {
+        socket.emit('transmission-force-ended', {
+            reason: reason,
+            message: `Your transmission was automatically ended (${reason})`,
+            timestamp: new Date()
+        });
+    }
+}
 
 module.exports = { app, server, io };
