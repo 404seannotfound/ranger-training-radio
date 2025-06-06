@@ -15,6 +15,9 @@ let mediaRecorder = null;
 let audioContext = null;
 let audioStream = null;
 let audioChunks = [];
+let audioProcessor = null;
+let microphoneSource = null;
+let currentRecording = null;
 
 // DOM Elements
 const loginScreen = document.getElementById('login-screen');
@@ -184,7 +187,10 @@ function connectToServer() {
     
     socket.on('audio-data', (data) => {
         if (data.callsign !== rangerCallsign) {
-            playReceivedAudio(data.audio);
+            playReceivedAudio(data);
+            
+            // Save received transmission to recording history
+            saveReceivedTransmission(data);
         }
     });
     
@@ -274,35 +280,63 @@ async function startTransmission() {
 
 // Start recording audio
 function startRecording() {
-    if (!audioStream) return;
+    if (!audioStream || !audioContext) return;
     
-    audioChunks = [];
-    mediaRecorder = new MediaRecorder(audioStream);
-    
-    mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-            audioChunks.push(event.data);
-        }
-    };
-    
-    mediaRecorder.onstop = async () => {
-        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-        const arrayBuffer = await audioBlob.arrayBuffer();
-        const audioData = new Uint8Array(arrayBuffer);
+    try {
+        // Create microphone source
+        microphoneSource = audioContext.createMediaStreamSource(audioStream);
         
-        // Apply radio effects if enabled
-        const processedAudio = effectsToggles.radioEffects.checked 
-            ? applyRadioEffects(audioData) 
-            : audioData;
+        // Initialize recording storage
+        currentRecording = {
+            id: Date.now(),
+            callsign: rangerCallsign,
+            type: 'Transmission',
+            timestamp: new Date().toLocaleString(),
+            startTime: Date.now(),
+            audioData: [],
+            sampleRate: audioContext.sampleRate
+        };
         
-        // Send audio data to server
-        socket.emit('audio-data', {
-            audio: Array.from(processedAudio)
-        });
-    };
-    
-    // Start recording in chunks
-    mediaRecorder.start(100); // 100ms chunks
+        // Create script processor for real-time audio processing
+        audioProcessor = audioContext.createScriptProcessor(4096, 1, 1);
+        
+        audioProcessor.onaudioprocess = (event) => {
+            if (!isTransmitting) return;
+            
+            const inputBuffer = event.inputBuffer;
+            const inputData = inputBuffer.getChannelData(0);
+            
+            // Convert to 16-bit PCM and send to server
+            const pcmData = new Int16Array(inputData.length);
+            for (let i = 0; i < inputData.length; i++) {
+                // Convert float (-1 to 1) to 16-bit integer
+                pcmData[i] = Math.max(-32768, Math.min(32767, inputData[i] * 32768));
+            }
+            
+            // Store audio data for recording history
+            if (currentRecording) {
+                currentRecording.audioData.push(...Array.from(pcmData));
+            }
+            
+            // Send audio data in real-time
+            if (socket && isConnected) {
+                socket.emit('audio-data', {
+                    audio: Array.from(pcmData),
+                    sampleRate: audioContext.sampleRate
+                });
+            }
+        };
+        
+        // Connect the audio processing chain
+        microphoneSource.connect(audioProcessor);
+        audioProcessor.connect(audioContext.destination);
+        
+        console.log('Real-time audio streaming started');
+        
+    } catch (error) {
+        console.error('Audio processing setup error:', error);
+        addToActivityLog('Error setting up audio processing');
+    }
 }
 
 // Stop transmission
@@ -313,9 +347,38 @@ function stopTransmission() {
     updateStatus('READY');
     pttButton.classList.remove('transmitting');
     
-    // Stop recording
-    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-        mediaRecorder.stop();
+    // Save recording to localStorage
+    if (currentRecording && currentRecording.audioData.length > 0) {
+        currentRecording.duration = (Date.now() - currentRecording.startTime) / 1000;
+        currentRecording.size = currentRecording.audioData.length * 2; // 16-bit = 2 bytes per sample
+        
+        // Get existing recordings
+        const existingRecordings = JSON.parse(localStorage.getItem('rangerRadioRecordings') || '[]');
+        existingRecordings.push(currentRecording);
+        
+        // Keep only last 50 recordings to manage storage
+        if (existingRecordings.length > 50) {
+            existingRecordings.splice(0, existingRecordings.length - 50);
+        }
+        
+        // Save to localStorage
+        localStorage.setItem('rangerRadioRecordings', JSON.stringify(existingRecordings));
+        
+        addToActivityLog(`Recording saved (${currentRecording.duration.toFixed(1)}s)`);
+        console.log('Recording saved:', currentRecording.id);
+    }
+    
+    currentRecording = null;
+    
+    // Clean up audio processing
+    if (audioProcessor) {
+        audioProcessor.disconnect();
+        audioProcessor = null;
+    }
+    
+    if (microphoneSource) {
+        microphoneSource.disconnect();
+        microphoneSource = null;
     }
     
     // Stop audio stream
@@ -419,25 +482,36 @@ function playNoise(duration, volume) {
 function playReceivedAudio(audioData) {
     if (!audioContext) return;
     
-    const audioArray = new Uint8Array(audioData);
-    
-    // Convert to audio buffer and play
-    audioContext.decodeAudioData(audioArray.buffer)
-        .then(audioBuffer => {
-            const source = audioContext.createBufferSource();
-            const gainNode = audioContext.createGain();
-            
-            source.buffer = audioBuffer;
-            source.connect(gainNode);
-            gainNode.connect(audioContext.destination);
-            
-            gainNode.gain.value = volumeSlider.value / 100;
-            
-            source.start();
-        })
-        .catch(error => {
-            console.error('Audio decode error:', error);
-        });
+    try {
+        // Convert received PCM data back to audio buffer
+        const pcmArray = new Int16Array(audioData.audio);
+        const sampleRate = audioData.sampleRate || 44100;
+        
+        // Create audio buffer
+        const audioBuffer = audioContext.createBuffer(1, pcmArray.length, sampleRate);
+        const bufferData = audioBuffer.getChannelData(0);
+        
+        // Convert 16-bit PCM back to float
+        for (let i = 0; i < pcmArray.length; i++) {
+            bufferData[i] = pcmArray[i] / 32768;
+        }
+        
+        // Create source and play
+        const source = audioContext.createBufferSource();
+        const gainNode = audioContext.createGain();
+        
+        source.buffer = audioBuffer;
+        source.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+        
+        gainNode.gain.value = volumeSlider.value / 100;
+        
+        source.start();
+        
+    } catch (error) {
+        console.error('Audio playback error:', error);
+        addToActivityLog('Error playing received audio');
+    }
 }
 
 // Apply radio effects (simplified version)
@@ -485,3 +559,33 @@ Object.entries(effectsToggles).forEach(([effect, toggle]) => {
         }
     });
 });
+
+// Save received transmission to recording history
+function saveReceivedTransmission(data) {
+    if (!data.audio || !data.callsign) return;
+    
+    const recording = {
+        id: Date.now() + Math.random(), // Ensure unique ID
+        callsign: data.callsign,
+        type: 'Received',
+        timestamp: new Date().toLocaleString(),
+        audioData: data.audio,
+        sampleRate: data.sampleRate || 44100,
+        duration: (data.audio.length / (data.sampleRate || 44100)),
+        size: data.audio.length * 2
+    };
+    
+    // Get existing recordings
+    const existingRecordings = JSON.parse(localStorage.getItem('rangerRadioRecordings') || '[]');
+    existingRecordings.push(recording);
+    
+    // Keep only last 50 recordings to manage storage
+    if (existingRecordings.length > 50) {
+        existingRecordings.splice(0, existingRecordings.length - 50);
+    }
+    
+    // Save to localStorage
+    localStorage.setItem('rangerRadioRecordings', JSON.stringify(existingRecordings));
+    
+    console.log('Received transmission saved:', recording.id);
+}
