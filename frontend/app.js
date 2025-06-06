@@ -348,7 +348,13 @@ async function startTransmission() {
             } 
         });
         
-        console.log('Microphone access granted, starting transmission...');
+        console.log('Microphone access granted');
+        console.log('Audio stream tracks:', audioStream.getTracks().map(t => ({
+            kind: t.kind,
+            enabled: t.enabled,
+            readyState: t.readyState,
+            label: t.label
+        })));
         
         // Set transmission state FIRST
         isTransmitting = true;
@@ -415,7 +421,6 @@ function startRecording() {
         };
         
         // Create script processor for real-time audio processing
-        // Note: ScriptProcessorNode is deprecated but still widely supported
         audioProcessor = audioContext.createScriptProcessor(4096, 1, 1);
         
         let audioDataCount = 0;
@@ -426,13 +431,22 @@ function startRecording() {
             const inputBuffer = event.inputBuffer;
             const inputData = inputBuffer.getChannelData(0);
             
-            // Check if we're getting actual audio data
-            const hasAudio = inputData.some(sample => Math.abs(sample) > 0.001);
-            if (hasAudio) {
-                audioDataCount++;
-                if (audioDataCount % 100 === 0) { // Log every 100 chunks
-                    console.log('Audio data being processed:', audioDataCount);
-                }
+            // Calculate audio level for debugging
+            let sum = 0;
+            let maxSample = 0;
+            for (let i = 0; i < inputData.length; i++) {
+                const abs = Math.abs(inputData[i]);
+                sum += abs;
+                maxSample = Math.max(maxSample, abs);
+            }
+            const avgLevel = sum / inputData.length;
+            
+            // Check if we're getting actual audio data (lower threshold)
+            const hasAudio = inputData.some(sample => Math.abs(sample) > 0.0001);
+            
+            audioDataCount++;
+            if (audioDataCount % 50 === 0) { // Log every 50 chunks
+                console.log('Audio chunk', audioDataCount, '- Avg level:', avgLevel.toFixed(6), 'Max:', maxSample.toFixed(6), 'hasAudio:', hasAudio);
             }
             
             // Convert to 16-bit PCM
@@ -443,8 +457,8 @@ function startRecording() {
                 pcmData[i] = sample * 32767;
             }
             
-            // Store audio data for recording history
-            if (currentRecording && hasAudio) {
+            // Store audio data for recording history (store all audio, not just when hasAudio)
+            if (currentRecording) {
                 currentRecording.audioData.push(...Array.from(pcmData));
             }
             
@@ -453,20 +467,20 @@ function startRecording() {
                 socket.emit('audio-data', {
                     audio: Array.from(pcmData),
                     sampleRate: audioContext.sampleRate,
-                    hasAudio: hasAudio
+                    hasAudio: hasAudio,
+                    debugLevel: avgLevel
                 });
             }
         };
         
-        // Connect the audio processing chain
-        // DON'T connect to destination to avoid feedback
+        // Connect the audio processing chain - SIMPLER APPROACH
         microphoneSource.connect(audioProcessor);
         
-        // Create a dummy destination to keep the processor active
-        const dummyGain = audioContext.createGain();
-        dummyGain.gain.value = 0; // Silent
-        audioProcessor.connect(dummyGain);
-        dummyGain.connect(audioContext.destination);
+        // Connect to a gain node to keep the processor active but silent
+        const silentGain = audioContext.createGain();
+        silentGain.gain.value = 0.0001; // Very quiet but not zero to keep processor active
+        audioProcessor.connect(silentGain);
+        silentGain.connect(audioContext.destination);
         
         console.log('Real-time audio streaming started');
         addToActivityLog('Audio processing active');
@@ -659,13 +673,7 @@ function playReceivedAudio(audioData) {
     if (!audioContext) return;
     
     try {
-        // Only play if there's actual audio content
-        if (!audioData.hasAudio) {
-            // Still process silent audio to maintain connection
-            return;
-        }
-        
-        console.log('Playing received audio from', audioData.callsign);
+        console.log('Received audio data from', audioData.callsign, 'hasAudio:', audioData.hasAudio, 'length:', audioData.audio.length);
         
         // Convert received PCM data back to audio buffer
         const pcmArray = new Int16Array(audioData.audio);
@@ -680,7 +688,7 @@ function playReceivedAudio(audioData) {
             bufferData[i] = pcmArray[i] / 32767;
         }
         
-        // Create source and play
+        // Create source and play (play all audio, not just when hasAudio flag is true)
         const source = audioContext.createBufferSource();
         const gainNode = audioContext.createGain();
         
@@ -691,6 +699,11 @@ function playReceivedAudio(audioData) {
         gainNode.gain.value = volumeSlider.value / 100;
         
         source.start();
+        
+        // Only log when we have significant audio content
+        if (audioData.hasAudio) {
+            console.log('Playing audio with voice content');
+        }
         
     } catch (error) {
         console.error('Audio playback error:', error);
@@ -746,7 +759,12 @@ Object.entries(effectsToggles).forEach(([effect, toggle]) => {
 
 // Save received transmission to recording history
 function saveReceivedTransmission(data) {
-    if (!data.audio || !data.callsign || !data.hasAudio) return;
+    if (!data.audio || !data.callsign) return;
+    
+    // Only save if there's meaningful audio content OR if it's a reasonably long transmission
+    const hasSignificantAudio = data.hasAudio || data.audio.length > 8192; // Save if has audio or longer than 8k samples
+    
+    if (!hasSignificantAudio) return;
     
     const recording = {
         id: Date.now() + Math.random(), // Ensure unique ID
