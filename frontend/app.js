@@ -868,6 +868,14 @@ function playNoise(duration, volume) {
 
 // Play received audio
 async function playReceivedAudio(audioData) {
+    console.log('🔍 DEBUG: playReceivedAudio called with:', {
+        hasAudioContext: !!audioContext,
+        audioContextState: audioContext?.state,
+        audioDataLength: audioData?.audio?.length,
+        callsign: audioData?.callsign,
+        volumeSliderValue: volumeSlider?.value
+    });
+    
     if (!audioContext) {
         console.error('❌ No audio context for playback');
         return;
@@ -876,8 +884,9 @@ async function playReceivedAudio(audioData) {
     try {
         // Ensure audio context is running before trying to play
         if (audioContext.state === 'suspended') {
-            console.log('🎵 Resuming audio context for playback...');
+            console.log('🎵 Audio context suspended, attempting to resume...');
             await audioContext.resume();
+            console.log('🎵 Audio context resume result:', audioContext.state);
         }
         
         const audioLength = audioData.audio.length;
@@ -890,6 +899,12 @@ async function playReceivedAudio(audioData) {
         // Convert received PCM data back to audio buffer
         const pcmArray = new Int16Array(audioData.audio);
         const sampleRate = audioData.sampleRate || 44100;
+        
+        console.log('🔍 DEBUG: Creating audio buffer...', {
+            pcmArrayLength: pcmArray.length,
+            sampleRate: sampleRate,
+            audioContextSampleRate: audioContext.sampleRate
+        });
         
         // Calculate the actual audio levels in the received data
         let receivedSum = 0;
@@ -905,15 +920,21 @@ async function playReceivedAudio(audioData) {
         console.log(`🎵 Received audio levels - Avg: ${receivedAvg.toFixed(1)}, Max: ${receivedMax} (${normalizedMax.toFixed(6)} normalized)`);
         
         // Create audio buffer
+        console.log('🔍 DEBUG: Creating AudioBuffer...');
         const audioBuffer = audioContext.createBuffer(1, pcmArray.length, sampleRate);
         const bufferData = audioBuffer.getChannelData(0);
+        
+        console.log('🔍 DEBUG: AudioBuffer created successfully, duration:', audioBuffer.duration, 'seconds');
         
         // Convert 16-bit PCM back to float
         for (let i = 0; i < pcmArray.length; i++) {
             bufferData[i] = pcmArray[i] / 32767;
         }
         
+        console.log('🔍 DEBUG: PCM data converted to float');
+        
         // Create source and play
+        console.log('🔍 DEBUG: Creating audio source and gain node...');
         const source = audioContext.createBufferSource();
         const gainNode = audioContext.createGain();
         
@@ -921,20 +942,46 @@ async function playReceivedAudio(audioData) {
         source.connect(gainNode);
         gainNode.connect(audioContext.destination);
         
-        gainNode.gain.value = volumeSlider.value / 100;
+        const volume = volumeSlider.value / 100;
+        gainNode.gain.value = volume;
+        
+        console.log('🔍 DEBUG: Audio chain connected, starting playback...', {
+            volume: volume,
+            gainValue: gainNode.gain.value,
+            audioContextTime: audioContext.currentTime,
+            bufferDuration: audioBuffer.duration
+        });
+        
+        // Add event listeners for debugging
+        source.onended = () => {
+            console.log('🔍 DEBUG: Audio source ended successfully');
+        };
+        
+        source.onerror = (error) => {
+            console.error('🔍 DEBUG: Audio source error:', error);
+        };
         
         source.start();
         
-        console.log(`🎶 Playing audio from ${audioData.callsign}, volume: ${gainNode.gain.value.toFixed(2)}`);
+        console.log(`🎶 STARTED playing audio from ${audioData.callsign}, volume: ${gainNode.gain.value.toFixed(2)}`);
+        
+        // Force immediate feedback
+        addToActivityLog(`🔊 Playing audio from ${audioData.callsign} (${normalizedMax.toFixed(3)} level)`);
         
         // Log when we have significant audio content
         if (normalizedMax > 0.01) {
             console.log(`🗣️ Playing meaningful audio from ${audioData.callsign} (${normalizedMax.toFixed(3)} level)`);
-            addToActivityLog(`🔊 Receiving audio from ${audioData.callsign} (${normalizedMax.toFixed(3)} level)`);
+        } else {
+            console.warn(`⚠️ Playing very quiet audio from ${audioData.callsign} (${normalizedMax.toFixed(6)} level)`);
         }
         
     } catch (error) {
         console.error('❌ Audio playback error:', error);
+        console.error('❌ Error details:', {
+            name: error.name,
+            message: error.message,
+            stack: error.stack
+        });
         addToActivityLog('Error playing received audio: ' + error.message);
     }
 }
@@ -992,7 +1039,23 @@ window.testReceivedAudio = function() {
         chunkNumber: 1
     };
     
+    console.log('🔧 Calling playReceivedAudio with test data...');
     playReceivedAudio(fakeAudioData);
+};
+
+// Debug function to check if user needs to interact with page first
+window.checkAudioReady = function() {
+    console.log('🔧 Checking audio readiness...');
+    console.log('- Audio Context State:', audioContext?.state);
+    console.log('- Volume Slider:', volumeSlider?.value);
+    
+    if (audioContext?.state === 'suspended') {
+        console.log('⚠️ Audio context is suspended. User interaction may be needed.');
+        console.log('Try clicking anywhere on the page, then run testReceivedAudio()');
+    } else {
+        console.log('✅ Audio context ready, running test...');
+        window.testReceivedAudio();
+    }
 };
 
 // Apply radio effects (simplified version)
