@@ -29,6 +29,36 @@
         #mic-test-button {
             margin-bottom: 10px;
         }
+        
+        .ptt-button.transmitting {
+            background: #e74c3c !important;
+            animation: pulse-red 1s infinite;
+            box-shadow: 0 0 20px rgba(231, 76, 60, 0.5);
+        }
+        
+        @keyframes pulse-red {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+        
+        .transmission-indicator {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: #e74c3c;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 25px;
+            display: none;
+            z-index: 1000;
+            font-weight: bold;
+            animation: pulse-red 1s infinite;
+        }
+        
+        .transmission-indicator.active {
+            display: block;
+        }
     </style>
 </head>
 <body>
@@ -166,6 +196,11 @@
                 </div>
             </div>
         </div>
+    </div>
+
+    <!-- Transmission Indicator -->
+    <div id="transmission-indicator" class="transmission-indicator">
+        🔴 TRANSMITTING
     </div>
 
     <script src="app.js"></script>

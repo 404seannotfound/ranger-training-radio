@@ -18,6 +18,8 @@ let audioChunks = [];
 let audioProcessor = null;
 let microphoneSource = null;
 let currentRecording = null;
+let transmissionTimeout = null; // Failsafe timeout
+let maxTransmissionTime = 30000; // 30 seconds max transmission
 
 // Test microphone functionality
 let micTestActive = false;
@@ -38,6 +40,7 @@ const presetMessagesModal = document.getElementById('preset-messages-modal');
 const closeModalButton = document.getElementById('close-modal');
 const micTestButton = document.getElementById('mic-test-button');
 const micLevelIndicator = document.getElementById('mic-level');
+const transmissionIndicator = document.getElementById('transmission-indicator');
 
 // Audio effects toggles
 const effectsToggles = {
@@ -62,30 +65,78 @@ function setupEventListeners() {
         if (e.key === 'Enter') joinNetwork();
     });
     
-    // PTT button events
-    pttButton.addEventListener('mousedown', startTransmission);
-    pttButton.addEventListener('mouseup', stopTransmission);
-    pttButton.addEventListener('mouseleave', stopTransmission);
+    // PTT button events - improved with better cleanup
+    pttButton.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        startTransmission();
+    });
+    
+    pttButton.addEventListener('mouseup', (e) => {
+        e.preventDefault();
+        stopTransmission();
+    });
+    
+    pttButton.addEventListener('mouseleave', (e) => {
+        e.preventDefault();
+        stopTransmission(); // Always stop when mouse leaves button
+    });
+    
     pttButton.addEventListener('touchstart', (e) => {
         e.preventDefault();
         startTransmission();
     });
+    
     pttButton.addEventListener('touchend', (e) => {
         e.preventDefault();
         stopTransmission();
     });
     
-    // Keyboard PTT (spacebar)
+    pttButton.addEventListener('touchcancel', (e) => {
+        e.preventDefault();
+        stopTransmission(); // Stop on touch cancel
+    });
+    
+    // Global keyboard PTT (spacebar) - improved handling
     document.addEventListener('keydown', (e) => {
-        if (e.code === 'Space' && !e.repeat && isConnected) {
+        if (e.code === 'Space' && !e.repeat && isConnected && !isTransmitting) {
             e.preventDefault();
             startTransmission();
         }
     });
     
     document.addEventListener('keyup', (e) => {
-        if (e.code === 'Space' && isConnected) {
+        if (e.code === 'Space' && isConnected && isTransmitting) {
             e.preventDefault();
+            stopTransmission();
+        }
+    });
+    
+    // Window focus/blur events - stop transmission if window loses focus
+    window.addEventListener('blur', () => {
+        if (isTransmitting) {
+            console.log('Window lost focus, stopping transmission');
+            stopTransmission();
+        }
+    });
+    
+    window.addEventListener('beforeunload', () => {
+        if (isTransmitting) {
+            stopTransmission();
+        }
+    });
+    
+    // Document visibility change - stop transmission if tab becomes hidden
+    document.addEventListener('visibilitychange', () => {
+        if (document.hidden && isTransmitting) {
+            console.log('Tab became hidden, stopping transmission');
+            stopTransmission();
+        }
+    });
+    
+    // Mouse global events to catch mouse release outside the button
+    document.addEventListener('mouseup', (e) => {
+        if (isTransmitting && e.target !== pttButton) {
+            console.log('Mouse released outside PTT button, stopping transmission');
             stopTransmission();
         }
     });
@@ -242,6 +293,17 @@ function showRadioInterface() {
 
 // Exit the radio network
 function exitNetwork() {
+    // Stop any active transmission first
+    if (isTransmitting) {
+        console.log('Stopping transmission before exiting network');
+        stopTransmission();
+    }
+    
+    // Stop microphone test if active
+    if (micTestActive) {
+        testMicrophone(); // This will stop the test
+    }
+    
     if (socket) {
         socket.disconnect();
         socket = null;
@@ -256,11 +318,19 @@ function exitNetwork() {
     callsignInput.value = '';
     activityLog.innerHTML = '';
     updateStatus('OFFLINE');
+    
+    console.log('Exited radio network');
 }
 
 // Start transmission
 async function startTransmission() {
-    if (!isConnected || isTransmitting) return;
+    // Prevent multiple simultaneous transmissions
+    if (!isConnected || isTransmitting) {
+        console.log('Cannot start transmission:', !isConnected ? 'not connected' : 'already transmitting');
+        return;
+    }
+    
+    console.log('Starting transmission...');
     
     try {
         // Resume audio context if suspended
@@ -280,12 +350,20 @@ async function startTransmission() {
         
         console.log('Microphone access granted, starting transmission...');
         
-        // Notify server
-        socket.emit('transmission-start');
-        
+        // Set transmission state FIRST
         isTransmitting = true;
         updateStatus('TRANSMITTING');
         pttButton.classList.add('transmitting');
+        
+        // Set failsafe timeout to prevent stuck transmissions
+        transmissionTimeout = setTimeout(() => {
+            console.warn('Transmission timeout reached, forcing stop');
+            addToActivityLog('Transmission timeout - automatically stopped');
+            stopTransmission();
+        }, maxTransmissionTime);
+        
+        // Notify server
+        socket.emit('transmission-start');
         
         // Play access tone
         playAccessTone();
@@ -302,9 +380,16 @@ async function startTransmission() {
         console.error('Microphone access error:', error);
         addToActivityLog('Error: Unable to access microphone');
         alert('Unable to access microphone. Please check permissions.');
+        
+        // Clean up on error
         isTransmitting = false;
         updateStatus('READY');
         pttButton.classList.remove('transmitting');
+        
+        if (transmissionTimeout) {
+            clearTimeout(transmissionTimeout);
+            transmissionTimeout = null;
+        }
     }
 }
 
@@ -394,8 +479,21 @@ function startRecording() {
 
 // Stop transmission
 function stopTransmission() {
-    if (!isTransmitting) return;
+    // Only proceed if we're actually transmitting
+    if (!isTransmitting) {
+        console.log('Stop transmission called but not currently transmitting');
+        return;
+    }
     
+    console.log('Stopping transmission...');
+    
+    // Clear failsafe timeout
+    if (transmissionTimeout) {
+        clearTimeout(transmissionTimeout);
+        transmissionTimeout = null;
+    }
+    
+    // Set state FIRST to prevent race conditions
     isTransmitting = false;
     updateStatus('READY');
     pttButton.classList.remove('transmitting');
@@ -425,19 +523,39 @@ function stopTransmission() {
     
     // Clean up audio processing
     if (audioProcessor) {
-        audioProcessor.disconnect();
+        try {
+            audioProcessor.disconnect();
+        } catch (e) {
+            console.warn('Error disconnecting audio processor:', e);
+        }
         audioProcessor = null;
     }
     
     if (microphoneSource) {
-        microphoneSource.disconnect();
+        try {
+            microphoneSource.disconnect();
+        } catch (e) {
+            console.warn('Error disconnecting microphone source:', e);
+        }
         microphoneSource = null;
     }
     
     // Stop audio stream
     if (audioStream) {
-        audioStream.getTracks().forEach(track => track.stop());
+        try {
+            audioStream.getTracks().forEach(track => {
+                track.stop();
+                console.log('Stopped audio track:', track.kind);
+            });
+        } catch (e) {
+            console.warn('Error stopping audio tracks:', e);
+        }
         audioStream = null;
+    }
+    
+    // Notify server AFTER cleanup
+    if (socket && isConnected) {
+        socket.emit('transmission-end');
     }
     
     // Play roger beep
@@ -448,16 +566,21 @@ function stopTransmission() {
         playSquelchTail();
     }, 200);
     
-    // Notify server
-    socket.emit('transmission-end');
-    
     addToActivityLog(`${rangerCallsign} ended transmission`);
+    console.log('Transmission stopped successfully');
 }
 
 // Update status indicator
 function updateStatus(status) {
     statusIndicator.textContent = status;
     statusIndicator.className = 'status-indicator status-' + status.toLowerCase();
+    
+    // Show/hide transmission indicator
+    if (status === 'TRANSMITTING') {
+        transmissionIndicator.classList.add('active');
+    } else {
+        transmissionIndicator.classList.remove('active');
+    }
 }
 
 // Add message to activity log
