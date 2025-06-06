@@ -7,6 +7,29 @@
     <link rel="stylesheet" href="styles.css">
     <script src="https://cdn.socket.io/4.6.1/socket.io.min.js"></script>
     <script src="config-loader.js"></script>
+    <style>
+        .mic-test-section {
+            margin-top: 15px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border: 1px solid #dee2e6;
+        }
+        
+        .mic-level-indicator {
+            width: 0%;
+            height: 20px;
+            background-color: #ddd;
+            border-radius: 10px;
+            margin-top: 10px;
+            transition: width 0.1s ease, background-color 0.2s ease;
+            border: 1px solid #ccc;
+        }
+        
+        #mic-test-button {
+            margin-bottom: 10px;
+        }
+    </style>
 </head>
 <body>
     <!-- Login Screen -->
@@ -83,6 +106,12 @@
                 <div class="volume-section">
                     <label for="volume-slider">Volume</label>
                     <input type="range" id="volume-slider" min="0" max="100" value="75">
+                </div>
+                
+                <!-- Microphone Test -->
+                <div class="mic-test-section">
+                    <button id="mic-test-button" class="btn btn-secondary">🎤 Test Microphone</button>
+                    <div id="mic-level" class="mic-level-indicator"></div>
                 </div>
             </div>
 

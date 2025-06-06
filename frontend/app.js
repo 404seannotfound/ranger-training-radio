@@ -19,6 +19,10 @@ let audioProcessor = null;
 let microphoneSource = null;
 let currentRecording = null;
 
+// Test microphone functionality
+let micTestActive = false;
+let micTestProcessor = null;
+
 // DOM Elements
 const loginScreen = document.getElementById('login-screen');
 const radioInterface = document.getElementById('radio-interface');
@@ -32,6 +36,8 @@ const volumeSlider = document.getElementById('volume-slider');
 const presetMessagesButton = document.getElementById('preset-messages-button');
 const presetMessagesModal = document.getElementById('preset-messages-modal');
 const closeModalButton = document.getElementById('close-modal');
+const micTestButton = document.getElementById('mic-test-button');
+const micLevelIndicator = document.getElementById('mic-level');
 
 // Audio effects toggles
 const effectsToggles = {
@@ -97,6 +103,9 @@ function setupEventListeners() {
     closeModalButton.addEventListener('click', () => {
         presetMessagesModal.style.display = 'none';
     });
+    
+    // Microphone test
+    micTestButton.addEventListener('click', testMicrophone);
 }
 
 // Initialize Web Audio API
@@ -104,6 +113,17 @@ function initializeAudioContext() {
     try {
         window.AudioContext = window.AudioContext || window.webkitAudioContext;
         audioContext = new AudioContext();
+        
+        console.log('Audio context initialized:', audioContext.state);
+        
+        // Add click listener to resume audio context (required by browsers)
+        document.addEventListener('click', async () => {
+            if (audioContext && audioContext.state === 'suspended') {
+                await audioContext.resume();
+                console.log('Audio context resumed:', audioContext.state);
+            }
+        }, { once: true });
+        
     } catch (error) {
         console.error('Web Audio API not supported:', error);
         addToActivityLog('Error: Web Audio API not supported in this browser');
@@ -243,14 +263,22 @@ async function startTransmission() {
     if (!isConnected || isTransmitting) return;
     
     try {
+        // Resume audio context if suspended
+        if (audioContext && audioContext.state === 'suspended') {
+            await audioContext.resume();
+        }
+        
         // Request microphone access
         audioStream = await navigator.mediaDevices.getUserMedia({ 
             audio: {
-                echoCancellation: true,
-                noiseSuppression: true,
-                autoGainControl: true
+                echoCancellation: false,  // Disable for radio realism
+                noiseSuppression: false,  // Disable for radio realism
+                autoGainControl: false,   // Disable for radio realism
+                sampleRate: 44100
             } 
         });
+        
+        console.log('Microphone access granted, starting transmission...');
         
         // Notify server
         socket.emit('transmission-start');
@@ -261,20 +289,22 @@ async function startTransmission() {
         
         // Play access tone
         playAccessTone();
+        addToActivityLog(`${rangerCallsign} is transmitting`);
         
         // Start recording after access tone
         setTimeout(() => {
-            if (isTransmitting) {
+            if (isTransmitting && audioStream) {
                 startRecording();
             }
-        }, 500);
-        
-        addToActivityLog(`${rangerCallsign} is transmitting`);
+        }, 200); // Shorter delay for more responsive recording
         
     } catch (error) {
         console.error('Microphone access error:', error);
         addToActivityLog('Error: Unable to access microphone');
         alert('Unable to access microphone. Please check permissions.');
+        isTransmitting = false;
+        updateStatus('READY');
+        pttButton.classList.remove('transmitting');
     }
 }
 
@@ -283,6 +313,8 @@ function startRecording() {
     if (!audioStream || !audioContext) return;
     
     try {
+        console.log('Setting up audio processing for recording...');
+        
         // Create microphone source
         microphoneSource = audioContext.createMediaStreamSource(audioStream);
         
@@ -298,7 +330,10 @@ function startRecording() {
         };
         
         // Create script processor for real-time audio processing
+        // Note: ScriptProcessorNode is deprecated but still widely supported
         audioProcessor = audioContext.createScriptProcessor(4096, 1, 1);
+        
+        let audioDataCount = 0;
         
         audioProcessor.onaudioprocess = (event) => {
             if (!isTransmitting) return;
@@ -306,36 +341,54 @@ function startRecording() {
             const inputBuffer = event.inputBuffer;
             const inputData = inputBuffer.getChannelData(0);
             
-            // Convert to 16-bit PCM and send to server
+            // Check if we're getting actual audio data
+            const hasAudio = inputData.some(sample => Math.abs(sample) > 0.001);
+            if (hasAudio) {
+                audioDataCount++;
+                if (audioDataCount % 100 === 0) { // Log every 100 chunks
+                    console.log('Audio data being processed:', audioDataCount);
+                }
+            }
+            
+            // Convert to 16-bit PCM
             const pcmData = new Int16Array(inputData.length);
             for (let i = 0; i < inputData.length; i++) {
                 // Convert float (-1 to 1) to 16-bit integer
-                pcmData[i] = Math.max(-32768, Math.min(32767, inputData[i] * 32768));
+                const sample = Math.max(-1, Math.min(1, inputData[i]));
+                pcmData[i] = sample * 32767;
             }
             
             // Store audio data for recording history
-            if (currentRecording) {
+            if (currentRecording && hasAudio) {
                 currentRecording.audioData.push(...Array.from(pcmData));
             }
             
-            // Send audio data in real-time
+            // Send audio data in real-time (always send to maintain connection)
             if (socket && isConnected) {
                 socket.emit('audio-data', {
                     audio: Array.from(pcmData),
-                    sampleRate: audioContext.sampleRate
+                    sampleRate: audioContext.sampleRate,
+                    hasAudio: hasAudio
                 });
             }
         };
         
         // Connect the audio processing chain
+        // DON'T connect to destination to avoid feedback
         microphoneSource.connect(audioProcessor);
-        audioProcessor.connect(audioContext.destination);
+        
+        // Create a dummy destination to keep the processor active
+        const dummyGain = audioContext.createGain();
+        dummyGain.gain.value = 0; // Silent
+        audioProcessor.connect(dummyGain);
+        dummyGain.connect(audioContext.destination);
         
         console.log('Real-time audio streaming started');
+        addToActivityLog('Audio processing active');
         
     } catch (error) {
         console.error('Audio processing setup error:', error);
-        addToActivityLog('Error setting up audio processing');
+        addToActivityLog('Error setting up audio processing: ' + error.message);
     }
 }
 
@@ -483,6 +536,14 @@ function playReceivedAudio(audioData) {
     if (!audioContext) return;
     
     try {
+        // Only play if there's actual audio content
+        if (!audioData.hasAudio) {
+            // Still process silent audio to maintain connection
+            return;
+        }
+        
+        console.log('Playing received audio from', audioData.callsign);
+        
         // Convert received PCM data back to audio buffer
         const pcmArray = new Int16Array(audioData.audio);
         const sampleRate = audioData.sampleRate || 44100;
@@ -493,7 +554,7 @@ function playReceivedAudio(audioData) {
         
         // Convert 16-bit PCM back to float
         for (let i = 0; i < pcmArray.length; i++) {
-            bufferData[i] = pcmArray[i] / 32768;
+            bufferData[i] = pcmArray[i] / 32767;
         }
         
         // Create source and play
@@ -510,7 +571,7 @@ function playReceivedAudio(audioData) {
         
     } catch (error) {
         console.error('Audio playback error:', error);
-        addToActivityLog('Error playing received audio');
+        addToActivityLog('Error playing received audio: ' + error.message);
     }
 }
 
@@ -562,7 +623,7 @@ Object.entries(effectsToggles).forEach(([effect, toggle]) => {
 
 // Save received transmission to recording history
 function saveReceivedTransmission(data) {
-    if (!data.audio || !data.callsign) return;
+    if (!data.audio || !data.callsign || !data.hasAudio) return;
     
     const recording = {
         id: Date.now() + Math.random(), // Ensure unique ID
@@ -588,4 +649,74 @@ function saveReceivedTransmission(data) {
     localStorage.setItem('rangerRadioRecordings', JSON.stringify(existingRecordings));
     
     console.log('Received transmission saved:', recording.id);
+}
+
+// Test microphone functionality
+async function testMicrophone() {
+    if (micTestActive) {
+        // Stop mic test
+        if (micTestProcessor) {
+            micTestProcessor.disconnect();
+            micTestProcessor = null;
+        }
+        if (audioStream) {
+            audioStream.getTracks().forEach(track => track.stop());
+            audioStream = null;
+        }
+        micTestActive = false;
+        micTestButton.textContent = '🎤 Test Microphone';
+        micLevelIndicator.style.width = '0%';
+        micLevelIndicator.style.backgroundColor = '#ddd';
+        return;
+    }
+    
+    try {
+        // Resume audio context if needed
+        if (audioContext && audioContext.state === 'suspended') {
+            await audioContext.resume();
+        }
+        
+        // Request microphone access
+        audioStream = await navigator.mediaDevices.getUserMedia({ 
+            audio: {
+                echoCancellation: false,
+                noiseSuppression: false,
+                autoGainControl: false
+            } 
+        });
+        
+        const micSource = audioContext.createMediaStreamSource(audioStream);
+        micTestProcessor = audioContext.createScriptProcessor(1024, 1, 1);
+        
+        micTestProcessor.onaudioprocess = (event) => {
+            const inputData = event.inputBuffer.getChannelData(0);
+            
+            // Calculate RMS (Root Mean Square) for volume level
+            let sum = 0;
+            for (let i = 0; i < inputData.length; i++) {
+                sum += inputData[i] * inputData[i];
+            }
+            const rms = Math.sqrt(sum / inputData.length);
+            const level = Math.min(rms * 1000, 100); // Scale and cap at 100%
+            
+            // Update visual indicator
+            micLevelIndicator.style.width = level + '%';
+            micLevelIndicator.style.backgroundColor = level > 50 ? '#e74c3c' : level > 20 ? '#f39c12' : '#27ae60';
+        };
+        
+        micSource.connect(micTestProcessor);
+        const dummyGain = audioContext.createGain();
+        dummyGain.gain.value = 0;
+        micTestProcessor.connect(dummyGain);
+        dummyGain.connect(audioContext.destination);
+        
+        micTestActive = true;
+        micTestButton.textContent = '⏹️ Stop Test';
+        addToActivityLog('Microphone test active - speak to see levels');
+        
+    } catch (error) {
+        console.error('Microphone test error:', error);
+        addToActivityLog('Microphone test failed: ' + error.message);
+        alert('Unable to access microphone for testing: ' + error.message);
+    }
 }
