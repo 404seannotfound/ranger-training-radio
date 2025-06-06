@@ -71,6 +71,11 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Load available audio devices
     loadAudioDevices();
+    
+    // Show mobile-specific guidance if needed
+    setTimeout(() => {
+        showMobileAudioGuidance();
+    }, 1000); // Delay to let device loading complete
 });
 
 // Setup event listeners
@@ -1180,6 +1185,48 @@ window.testReceivedAudio = function() {
     playReceivedAudio(fakeAudioData);
 };
 
+// Mobile-specific debug function
+window.debugMobileAudio = function() {
+    const isMobile = /iPhone|iPad|iPod|Android|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    
+    console.log('📱 Mobile Audio Debug:');
+    addToActivityLog('📱 Mobile Audio Debug:');
+    
+    console.log('- Is Mobile:', isMobile);
+    addToActivityLog(`- Device Type: ${isMobile ? 'Mobile' : 'Desktop'}`);
+    
+    console.log('- User Agent:', navigator.userAgent);
+    addToActivityLog(`- Browser: ${navigator.userAgent.split(' ').pop()}`);
+    
+    console.log('- Audio Context State:', audioContext?.state);
+    addToActivityLog(`- Audio Context: ${audioContext?.state || 'None'}`);
+    
+    console.log('- Volume:', volumeSlider?.value);
+    addToActivityLog(`- Volume: ${volumeSlider?.value || 'Unknown'}%`);
+    
+    // Test basic audio playback
+    if (audioContext) {
+        addToActivityLog('🔊 Testing basic audio playback...');
+        playTone(800, 0.5, 0.5); // Longer, louder tone for mobile
+    }
+    
+    // Check media devices API support
+    if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
+        addToActivityLog('✅ Media Devices API supported');
+        
+        navigator.mediaDevices.enumerateDevices().then(devices => {
+            addToActivityLog(`📱 Devices found: ${devices.length}`);
+            devices.forEach((device, index) => {
+                addToActivityLog(`  ${index + 1}. ${device.kind}: ${device.label || 'Unnamed'}`);
+            });
+        }).catch(error => {
+            addToActivityLog(`❌ Device enumeration failed: ${error.message}`);
+        });
+    } else {
+        addToActivityLog('❌ Media Devices API not supported');
+    }
+};
+
 // Apply radio effects (simplified version)
 function applyRadioEffects(audioData) {
     // This is a placeholder for radio effects
@@ -1359,25 +1406,65 @@ function startConnectionMonitoring() {
 // Load and populate audio device lists
 async function loadAudioDevices() {
     try {
-        // Request permissions first
+        // Check if we're on mobile
+        const isMobile = /iPhone|iPad|iPod|Android|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        
+        if (isMobile) {
+            console.log('Mobile device detected, limited device enumeration available');
+            addToActivityLog('📱 Mobile device detected - device selection may be limited');
+            
+            // Set basic options for mobile
+            microphoneSelect.innerHTML = '<option value="">Default Microphone</option>';
+            speakerSelect.innerHTML = '<option value="">Default Speaker</option>';
+            
+            // Hide refresh button on mobile as it's less useful
+            refreshDevicesButton.style.display = 'none';
+            
+            addToActivityLog('📱 Using default audio devices (mobile limitations)');
+            return;
+        }
+        
+        // Request permissions first (desktop)
         await navigator.mediaDevices.getUserMedia({ audio: true });
         
         // Get list of all media devices
         const devices = await navigator.mediaDevices.enumerateDevices();
         
-        // Filter and populate microphones
-        const microphones = devices.filter(device => device.kind === 'audioinput');
-        populateDeviceSelect(microphoneSelect, microphones, 'microphone');
+        console.log('Raw devices found:', devices);
         
-        // Filter and populate speakers/outputs
+        // Filter devices and check if we got proper device info
+        const microphones = devices.filter(device => device.kind === 'audioinput');
         const speakers = devices.filter(device => device.kind === 'audiooutput');
+        
+        // Check if devices have labels (indicates proper permissions)
+        const hasLabels = microphones.some(device => device.label) || speakers.some(device => device.label);
+        
+        if (!hasLabels && (microphones.length > 0 || speakers.length > 0)) {
+            addToActivityLog('⚠️ Device permissions needed - some devices may not show names');
+        }
+        
+        // Populate dropdowns
+        populateDeviceSelect(microphoneSelect, microphones, 'microphone');
         populateDeviceSelect(speakerSelect, speakers, 'speaker');
         
         addToActivityLog(`✅ Found ${microphones.length} microphones and ${speakers.length} speakers`);
         
+        // If no devices found, provide helpful message
+        if (microphones.length === 0 && speakers.length === 0) {
+            addToActivityLog('⚠️ No audio devices detected - using system defaults');
+        }
+        
     } catch (error) {
         console.error('Error loading audio devices:', error);
-        addToActivityLog(`❌ Failed to load audio devices: ${error.message}`);
+        
+        // Provide more specific error messages
+        if (error.name === 'NotAllowedError') {
+            addToActivityLog('❌ Microphone permission denied - cannot enumerate devices');
+        } else if (error.name === 'NotFoundError') {
+            addToActivityLog('❌ No audio devices found on this system');
+        } else {
+            addToActivityLog(`❌ Failed to load audio devices: ${error.message}`);
+        }
         
         // Fallback options
         microphoneSelect.innerHTML = '<option value="">Default Microphone</option>';
@@ -1434,5 +1521,43 @@ async function updateAudioOutput() {
     } catch (error) {
         console.error('Error updating audio output:', error);
         addToActivityLog(`❌ Failed to update audio output: ${error.message}`);
+    }
+}
+
+// Provide mobile-specific audio guidance
+function showMobileAudioGuidance() {
+    const isMobile = /iPhone|iPad|iPod|Android|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    
+    if (isMobile) {
+        // Add mobile-specific guidance to activity log
+        addToActivityLog('📱 Mobile Audio Tips:');
+        addToActivityLog('• Use wired headphones for best audio quality');
+        addToActivityLog('• Bluetooth may have audio delays');
+        addToActivityLog('• Check phone volume and ringer settings');
+        addToActivityLog('• Some phones route audio to earpiece vs speaker');
+        
+        // Update the audio devices section with mobile info
+        const audioDevicesSection = document.querySelector('.audio-devices-section');
+        if (audioDevicesSection) {
+            const mobileInfo = document.createElement('div');
+            mobileInfo.className = 'mobile-audio-info';
+            mobileInfo.innerHTML = `
+                <p><strong>📱 Mobile Device Detected</strong></p>
+                <p>Audio device selection is limited on mobile. For best results:</p>
+                <ul>
+                    <li>Use wired headphones/earbuds</li>
+                    <li>Check volume and ringer settings</li>
+                    <li>Audio may route to earpiece or speaker</li>
+                </ul>
+            `;
+            mobileInfo.style.marginTop = '10px';
+            mobileInfo.style.padding = '10px';
+            mobileInfo.style.background = '#fff3cd';
+            mobileInfo.style.border = '1px solid #ffeaa7';
+            mobileInfo.style.borderRadius = '4px';
+            mobileInfo.style.fontSize = '14px';
+            
+            audioDevicesSection.appendChild(mobileInfo);
+        }
     }
 }
