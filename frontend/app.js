@@ -793,7 +793,19 @@ function addToActivityLog(message) {
     logEntry.textContent = `[${timestamp}] ${message}`;
     activityLog.appendChild(logEntry);
     activityLog.scrollTop = activityLog.scrollHeight;
+    
+    // Keep log from getting too long (remove old entries)
+    while (activityLog.children.length > 100) {
+        activityLog.removeChild(activityLog.firstChild);
+    }
 }
+
+// Function to clear the activity log (exposed globally for easy access)
+window.clearLog = function() {
+    activityLog.innerHTML = '';
+    addToActivityLog('🧹 Activity log cleared');
+    console.log('Activity log cleared');
+};
 
 // Audio playback functions
 function playAccessTone() {
@@ -817,7 +829,12 @@ function playBusyTone() {
 
 // Helper function to play tones
 function playTone(frequency, duration, volume) {
-    if (!audioContext) return;
+    if (!audioContext) {
+        const errorMsg = '❌ No audio context for tone playback';
+        console.warn(errorMsg);
+        addToActivityLog(errorMsg);
+        return;
+    }
     
     try {
         const oscillator = audioContext.createOscillator();
@@ -832,14 +849,22 @@ function playTone(frequency, duration, volume) {
         oscillator.start();
         oscillator.stop(audioContext.currentTime + duration);
         
+        console.log(`🎵 Playing tone: ${frequency}Hz`);
+        
     } catch (error) {
         console.error('Error playing tone:', error);
+        addToActivityLog(`❌ Tone playback error: ${error.message}`);
     }
 }
 
 // Helper function to play noise
 function playNoise(duration, volume) {
-    if (!audioContext) return;
+    if (!audioContext) {
+        const errorMsg = '❌ No audio context for noise playback';
+        console.warn(errorMsg);
+        addToActivityLog(errorMsg);
+        return;
+    }
     
     try {
         const bufferSize = audioContext.sampleRate * duration;
@@ -861,23 +886,31 @@ function playNoise(duration, volume) {
         
         source.start();
         
+        console.log(`🔊 Playing noise for ${duration}s`);
+        
     } catch (error) {
         console.error('Error playing noise:', error);
+        addToActivityLog(`❌ Noise playback error: ${error.message}`);
     }
 }
 
 // Play received audio
 async function playReceivedAudio(audioData) {
-    console.log('🔍 DEBUG: playReceivedAudio called with:', {
+    const debugInfo = {
         hasAudioContext: !!audioContext,
         audioContextState: audioContext?.state,
         audioDataLength: audioData?.audio?.length,
         callsign: audioData?.callsign,
         volumeSliderValue: volumeSlider?.value
-    });
+    };
+    
+    console.log('🔍 DEBUG: playReceivedAudio called with:', debugInfo);
+    addToActivityLog(`🔍 DEBUG: Receiving audio from ${audioData?.callsign}, length: ${audioData?.audio?.length}, volume: ${volumeSlider?.value}%`);
     
     if (!audioContext) {
-        console.error('❌ No audio context for playback');
+        const errorMsg = '❌ No audio context for playback';
+        console.error(errorMsg);
+        addToActivityLog(errorMsg);
         return;
     }
     
@@ -885,8 +918,10 @@ async function playReceivedAudio(audioData) {
         // Ensure audio context is running before trying to play
         if (audioContext.state === 'suspended') {
             console.log('🎵 Audio context suspended, attempting to resume...');
+            addToActivityLog('🎵 Audio context suspended, attempting to resume...');
             await audioContext.resume();
             console.log('🎵 Audio context resume result:', audioContext.state);
+            addToActivityLog(`🎵 Audio context resume result: ${audioContext.state}`);
         }
         
         const audioLength = audioData.audio.length;
@@ -900,11 +935,13 @@ async function playReceivedAudio(audioData) {
         const pcmArray = new Int16Array(audioData.audio);
         const sampleRate = audioData.sampleRate || 44100;
         
-        console.log('🔍 DEBUG: Creating audio buffer...', {
+        const bufferDebug = {
             pcmArrayLength: pcmArray.length,
             sampleRate: sampleRate,
             audioContextSampleRate: audioContext.sampleRate
-        });
+        };
+        console.log('🔍 DEBUG: Creating audio buffer...', bufferDebug);
+        addToActivityLog(`🔍 Creating audio buffer: ${pcmArray.length} samples at ${sampleRate}Hz`);
         
         // Calculate the actual audio levels in the received data
         let receivedSum = 0;
@@ -918,6 +955,7 @@ async function playReceivedAudio(audioData) {
         const normalizedMax = receivedMax / 32767;
         
         console.log(`🎵 Received audio levels - Avg: ${receivedAvg.toFixed(1)}, Max: ${receivedMax} (${normalizedMax.toFixed(6)} normalized)`);
+        addToActivityLog(`🎵 Audio levels - Max: ${normalizedMax.toFixed(4)} (${receivedMax > 1000 ? 'Good' : 'Low'} signal)`);
         
         // Create audio buffer
         console.log('🔍 DEBUG: Creating AudioBuffer...');
@@ -925,6 +963,7 @@ async function playReceivedAudio(audioData) {
         const bufferData = audioBuffer.getChannelData(0);
         
         console.log('🔍 DEBUG: AudioBuffer created successfully, duration:', audioBuffer.duration, 'seconds');
+        addToActivityLog(`🔍 Audio buffer created: ${audioBuffer.duration.toFixed(2)}s duration`);
         
         // Convert 16-bit PCM back to float
         for (let i = 0; i < pcmArray.length; i++) {
@@ -945,44 +984,53 @@ async function playReceivedAudio(audioData) {
         const volume = volumeSlider.value / 100;
         gainNode.gain.value = volume;
         
-        console.log('🔍 DEBUG: Audio chain connected, starting playback...', {
+        const playbackDebug = {
             volume: volume,
             gainValue: gainNode.gain.value,
             audioContextTime: audioContext.currentTime,
             bufferDuration: audioBuffer.duration
-        });
+        };
+        console.log('🔍 DEBUG: Audio chain connected, starting playback...', playbackDebug);
+        addToActivityLog(`🔍 Starting playback: Volume ${(volume * 100).toFixed(0)}%, Duration ${audioBuffer.duration.toFixed(2)}s`);
         
         // Add event listeners for debugging
         source.onended = () => {
             console.log('🔍 DEBUG: Audio source ended successfully');
+            addToActivityLog(`✅ Audio from ${audioData.callsign} finished playing`);
         };
         
         source.onerror = (error) => {
             console.error('🔍 DEBUG: Audio source error:', error);
+            addToActivityLog(`❌ Audio playback error from ${audioData.callsign}: ${error}`);
         };
         
         source.start();
         
         console.log(`🎶 STARTED playing audio from ${audioData.callsign}, volume: ${gainNode.gain.value.toFixed(2)}`);
-        
-        // Force immediate feedback
-        addToActivityLog(`🔊 Playing audio from ${audioData.callsign} (${normalizedMax.toFixed(3)} level)`);
+        addToActivityLog(`🎶 PLAYING audio from ${audioData.callsign} (Vol: ${(gainNode.gain.value * 100).toFixed(0)}%)`);
         
         // Log when we have significant audio content
         if (normalizedMax > 0.01) {
             console.log(`🗣️ Playing meaningful audio from ${audioData.callsign} (${normalizedMax.toFixed(3)} level)`);
+            addToActivityLog(`🗣️ Strong audio signal from ${audioData.callsign}`);
+        } else if (normalizedMax > 0.001) {
+            console.warn(`⚠️ Playing quiet audio from ${audioData.callsign} (${normalizedMax.toFixed(6)} level)`);
+            addToActivityLog(`⚠️ Weak audio signal from ${audioData.callsign} - check microphone`);
         } else {
             console.warn(`⚠️ Playing very quiet audio from ${audioData.callsign} (${normalizedMax.toFixed(6)} level)`);
+            addToActivityLog(`⚠️ Very weak/silent audio from ${audioData.callsign}`);
         }
         
     } catch (error) {
-        console.error('❌ Audio playback error:', error);
-        console.error('❌ Error details:', {
+        const errorDetails = {
             name: error.name,
             message: error.message,
             stack: error.stack
-        });
-        addToActivityLog('Error playing received audio: ' + error.message);
+        };
+        console.error('❌ Audio playback error:', error);
+        console.error('❌ Error details:', errorDetails);
+        addToActivityLog(`❌ Audio playback error: ${error.message}`);
+        addToActivityLog(`❌ Error type: ${error.name}`);
     }
 }
 
@@ -1012,16 +1060,48 @@ window.testAudioContext = function() {
     console.log('- Current Time:', audioContext?.currentTime);
     console.log('- Volume Slider:', volumeSlider?.value);
     
+    // Also log to activity log
+    addToActivityLog('🔧 Testing Audio Context...');
+    addToActivityLog(`Audio Context State: ${audioContext?.state || 'None'}`);
+    addToActivityLog(`Sample Rate: ${audioContext?.sampleRate || 'Unknown'}`);
+    addToActivityLog(`Volume: ${volumeSlider?.value || 'Unknown'}%`);
+    
     if (audioContext) {
+        addToActivityLog('🎵 Playing test tone...');
         playTestTone();
     } else {
-        console.error('No audio context available');
+        const errorMsg = '❌ No audio context available';
+        console.error(errorMsg);
+        addToActivityLog(errorMsg);
+    }
+};
+
+// Debug function to check if user needs to interact with page first
+window.checkAudioReady = function() {
+    console.log('🔧 Checking audio readiness...');
+    console.log('- Audio Context State:', audioContext?.state);
+    console.log('- Volume Slider:', volumeSlider?.value);
+    
+    addToActivityLog('🔧 Checking audio readiness...');
+    addToActivityLog(`Audio Context: ${audioContext?.state || 'None'}`);
+    addToActivityLog(`Volume: ${volumeSlider?.value || 'Unknown'}%`);
+    
+    if (audioContext?.state === 'suspended') {
+        const warningMsg = '⚠️ Audio context is suspended. User interaction may be needed.';
+        console.log(warningMsg);
+        addToActivityLog(warningMsg);
+        addToActivityLog('Try clicking anywhere on the page, then run testReceivedAudio()');
+    } else {
+        console.log('✅ Audio context ready, running test...');
+        addToActivityLog('✅ Audio context ready, running test...');
+        window.testReceivedAudio();
     }
 };
 
 // Debug function to test received audio simulation
 window.testReceivedAudio = function() {
     console.log('🔧 Testing received audio simulation...');
+    addToActivityLog('🔧 Testing received audio simulation...');
     
     // Create fake audio data for testing
     const testPCM = new Array(4096);
@@ -1040,22 +1120,8 @@ window.testReceivedAudio = function() {
     };
     
     console.log('🔧 Calling playReceivedAudio with test data...');
+    addToActivityLog('🔧 Simulating received audio (440Hz test tone)...');
     playReceivedAudio(fakeAudioData);
-};
-
-// Debug function to check if user needs to interact with page first
-window.checkAudioReady = function() {
-    console.log('🔧 Checking audio readiness...');
-    console.log('- Audio Context State:', audioContext?.state);
-    console.log('- Volume Slider:', volumeSlider?.value);
-    
-    if (audioContext?.state === 'suspended') {
-        console.log('⚠️ Audio context is suspended. User interaction may be needed.');
-        console.log('Try clicking anywhere on the page, then run testReceivedAudio()');
-    } else {
-        console.log('✅ Audio context ready, running test...');
-        window.testReceivedAudio();
-    }
 };
 
 // Apply radio effects (simplified version)
