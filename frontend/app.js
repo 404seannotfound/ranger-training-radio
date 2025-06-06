@@ -25,6 +25,11 @@ let maxTransmissionTime = 30000; // 30 seconds max transmission
 let micTestActive = false;
 let micTestProcessor = null;
 
+// Audio device selection
+let selectedMicrophoneId = null;
+let selectedSpeakerId = null;
+let audioOutputElement = null; // For setting sink ID
+
 // DOM Elements
 const loginScreen = document.getElementById('login-screen');
 const radioInterface = document.getElementById('radio-interface');
@@ -42,6 +47,11 @@ const micTestButton = document.getElementById('mic-test-button');
 const micLevelIndicator = document.getElementById('mic-level');
 const transmissionIndicator = document.getElementById('transmission-indicator');
 
+// Audio device selection elements
+const microphoneSelect = document.getElementById('microphone-select');
+const speakerSelect = document.getElementById('speaker-select');
+const refreshDevicesButton = document.getElementById('refresh-devices-button');
+
 // Audio effects toggles
 const effectsToggles = {
     accessTone: document.getElementById('access-tone-toggle'),
@@ -58,6 +68,9 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Start connection monitoring
     startConnectionMonitoring();
+    
+    // Load available audio devices
+    loadAudioDevices();
 });
 
 // Setup event listeners
@@ -179,6 +192,27 @@ function setupEventListeners() {
     
     // Microphone test
     micTestButton.addEventListener('click', testMicrophone);
+    
+    // Audio device selection
+    microphoneSelect.addEventListener('change', (e) => {
+        selectedMicrophoneId = e.target.value;
+        addToActivityLog(`🎤 Selected microphone: ${e.target.options[e.target.selectedIndex].text}`);
+        console.log('Selected microphone ID:', selectedMicrophoneId);
+    });
+    
+    speakerSelect.addEventListener('change', async (e) => {
+        selectedSpeakerId = e.target.value;
+        addToActivityLog(`🔊 Selected speaker: ${e.target.options[e.target.selectedIndex].text}`);
+        console.log('Selected speaker ID:', selectedSpeakerId);
+        
+        // Update audio output if supported
+        await updateAudioOutput();
+    });
+    
+    refreshDevicesButton.addEventListener('click', () => {
+        addToActivityLog('🔄 Refreshing audio devices...');
+        loadAudioDevices();
+    });
 }
 
 // Initialize Web Audio API
@@ -481,14 +515,20 @@ async function startTransmission() {
         
         // Request fresh microphone access for this transmission
         console.log('Requesting fresh microphone access...');
-        audioStream = await navigator.mediaDevices.getUserMedia({ 
-            audio: {
-                echoCancellation: false,  // Disable for radio realism
-                noiseSuppression: false,  // Disable for radio realism
-                autoGainControl: false,   // Disable for radio realism
-                sampleRate: 44100
-            } 
-        });
+        const audioConstraints = {
+            echoCancellation: false,  // Disable for radio realism
+            noiseSuppression: false,  // Disable for radio realism
+            autoGainControl: false,   // Disable for radio realism
+            sampleRate: 44100
+        };
+        
+        // Use selected microphone if available
+        if (selectedMicrophoneId) {
+            audioConstraints.deviceId = { exact: selectedMicrophoneId };
+            console.log('Using selected microphone:', selectedMicrophoneId);
+        }
+        
+        audioStream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
         
         console.log('✅ Fresh microphone access granted');
         console.log('Audio stream tracks:', audioStream.getTracks().map(t => ({
@@ -979,7 +1019,23 @@ async function playReceivedAudio(audioData) {
         
         source.buffer = audioBuffer;
         source.connect(gainNode);
-        gainNode.connect(audioContext.destination);
+        
+        // Connect to selected output device if available and supported
+        if (selectedSpeakerId && audioOutputElement && typeof audioOutputElement.setSinkId === 'function') {
+            // Create a MediaStreamDestination to route audio to selected device
+            const destination = audioContext.createMediaStreamDestination();
+            gainNode.connect(destination);
+            
+            // Play through the selected audio device
+            audioOutputElement.srcObject = destination.stream;
+            audioOutputElement.play().catch(e => console.warn('Audio element play failed:', e));
+            
+            console.log('🔍 DEBUG: Audio routed to selected output device');
+        } else {
+            // Use default audio context destination
+            gainNode.connect(audioContext.destination);
+            console.log('🔍 DEBUG: Audio routed to default output');
+        }
         
         const volume = volumeSlider.value / 100;
         gainNode.gain.value = volume;
@@ -1225,13 +1281,19 @@ async function testMicrophone() {
         }
         
         // Request microphone access
-        audioStream = await navigator.mediaDevices.getUserMedia({ 
-            audio: {
-                echoCancellation: false,
-                noiseSuppression: false,
-                autoGainControl: false
-            } 
-        });
+        const micConstraints = {
+            echoCancellation: false,
+            noiseSuppression: false,
+            autoGainControl: false
+        };
+        
+        // Use selected microphone if available
+        if (selectedMicrophoneId) {
+            micConstraints.deviceId = { exact: selectedMicrophoneId };
+            console.log('Testing selected microphone:', selectedMicrophoneId);
+        }
+        
+        audioStream = await navigator.mediaDevices.getUserMedia({ audio: micConstraints });
         
         const micSource = audioContext.createMediaStreamSource(audioStream);
         micTestProcessor = audioContext.createScriptProcessor(1024, 1, 1);
@@ -1292,4 +1354,85 @@ function startConnectionMonitoring() {
         }
         
     }, 2000); // Check every 2 seconds
+}
+
+// Load and populate audio device lists
+async function loadAudioDevices() {
+    try {
+        // Request permissions first
+        await navigator.mediaDevices.getUserMedia({ audio: true });
+        
+        // Get list of all media devices
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        
+        // Filter and populate microphones
+        const microphones = devices.filter(device => device.kind === 'audioinput');
+        populateDeviceSelect(microphoneSelect, microphones, 'microphone');
+        
+        // Filter and populate speakers/outputs
+        const speakers = devices.filter(device => device.kind === 'audiooutput');
+        populateDeviceSelect(speakerSelect, speakers, 'speaker');
+        
+        addToActivityLog(`✅ Found ${microphones.length} microphones and ${speakers.length} speakers`);
+        
+    } catch (error) {
+        console.error('Error loading audio devices:', error);
+        addToActivityLog(`❌ Failed to load audio devices: ${error.message}`);
+        
+        // Fallback options
+        microphoneSelect.innerHTML = '<option value="">Default Microphone</option>';
+        speakerSelect.innerHTML = '<option value="">Default Speaker</option>';
+    }
+}
+
+// Populate device select dropdown
+function populateDeviceSelect(selectElement, devices, deviceType) {
+    selectElement.innerHTML = '';
+    
+    // Add default option
+    const defaultOption = document.createElement('option');
+    defaultOption.value = '';
+    defaultOption.textContent = `Default ${deviceType.charAt(0).toUpperCase() + deviceType.slice(1)}`;
+    selectElement.appendChild(defaultOption);
+    
+    // Add each device
+    devices.forEach(device => {
+        const option = document.createElement('option');
+        option.value = device.deviceId;
+        option.textContent = device.label || `${deviceType.charAt(0).toUpperCase() + deviceType.slice(1)} ${devices.indexOf(device) + 1}`;
+        selectElement.appendChild(option);
+    });
+    
+    console.log(`Populated ${deviceType} select with ${devices.length} devices`);
+}
+
+// Update audio output device
+async function updateAudioOutput() {
+    try {
+        if (!selectedSpeakerId) {
+            console.log('Using default audio output');
+            return;
+        }
+        
+        // Create or get audio element for output device control
+        if (!audioOutputElement) {
+            audioOutputElement = document.createElement('audio');
+            audioOutputElement.style.display = 'none';
+            document.body.appendChild(audioOutputElement);
+        }
+        
+        // Check if setSinkId is supported
+        if (typeof audioOutputElement.setSinkId === 'function') {
+            await audioOutputElement.setSinkId(selectedSpeakerId);
+            console.log('Audio output device updated to:', selectedSpeakerId);
+            addToActivityLog('✅ Audio output device updated');
+        } else {
+            console.warn('setSinkId not supported - using default output');
+            addToActivityLog('⚠️ Device selection not fully supported by browser');
+        }
+        
+    } catch (error) {
+        console.error('Error updating audio output:', error);
+        addToActivityLog(`❌ Failed to update audio output: ${error.message}`);
+    }
 }

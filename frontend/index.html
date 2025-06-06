@@ -59,6 +59,49 @@
         .transmission-indicator.active {
             display: block;
         }
+        
+        .audio-devices-section {
+            margin-top: 15px;
+            padding: 15px;
+            background: #f0f8ff;
+            border-radius: 8px;
+            border: 1px solid #add8e6;
+        }
+        
+        .audio-devices-section h4 {
+            margin: 0 0 15px 0;
+            color: #2c3e50;
+        }
+        
+        .device-selection {
+            margin-bottom: 10px;
+        }
+        
+        .device-selection label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #34495e;
+        }
+        
+        .device-select {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #bdc3c7;
+            border-radius: 4px;
+            background: white;
+            font-size: 14px;
+        }
+        
+        .device-select:focus {
+            border-color: #3498db;
+            outline: none;
+            box-shadow: 0 0 5px rgba(52, 152, 219, 0.3);
+        }
+        
+        #refresh-devices-button {
+            margin-top: 10px;
+        }
     </style>
 </head>
 <body>
@@ -136,6 +179,24 @@
                 <div class="volume-section">
                     <label for="volume-slider">Volume</label>
                     <input type="range" id="volume-slider" min="0" max="100" value="75">
+                </div>
+                
+                <!-- Audio Device Selection -->
+                <div class="audio-devices-section">
+                    <h4>Audio Devices</h4>
+                    <div class="device-selection">
+                        <label for="microphone-select">Microphone</label>
+                        <select id="microphone-select" class="device-select">
+                            <option value="">Loading microphones...</option>
+                        </select>
+                    </div>
+                    <div class="device-selection">
+                        <label for="speaker-select">Speaker/Headphones</label>
+                        <select id="speaker-select" class="device-select">
+                            <option value="">Loading speakers...</option>
+                        </select>
+                    </div>
+                    <button id="refresh-devices-button" class="btn btn-secondary">🔄 Refresh Devices</button>
                 </div>
                 
                 <!-- Microphone Test -->
