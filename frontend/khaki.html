@@ -226,7 +226,7 @@
     </style>
 </head>
 <body>
-    <a href="index.html" class="regular-radio-link">👥 Regular Radio</a>
+    <a href="index.html" class="regular-radio-link" onclick="window.open('index.html', '_blank'); return false;">�� Regular Radio</a>
     
     <div class="container">
         <div class="khaki-header">
@@ -383,8 +383,8 @@
     
     <!-- Load configuration and main app -->
     <script src="config-loader.js"></script>
-    <!-- Add Socket.IO library -->
-    <script src="/socket.io/socket.io.js"></script>
+    <!-- Add Socket.IO library from CDN -->
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
     <script>
         // Khaki-specific functionality
         let assignedKhakiNumber = null;
@@ -394,6 +394,36 @@
         let recordings = [];
         let currentlyPlaying = null;
         let recordingsAudioContext = null;
+        
+        // Create all required DOM elements before app.js loads
+        function createRequiredElements() {
+            // Create hidden callsign input that app.js expects
+            if (!document.getElementById('callsign')) {
+                const hiddenInput = document.createElement('input');
+                hiddenInput.id = 'callsign';
+                hiddenInput.type = 'hidden';
+                hiddenInput.value = khakiCallsign || 'KHAKI';
+                document.body.appendChild(hiddenInput);
+            }
+            
+            // Create hidden preset messages elements if they don't exist
+            const elementsToCreate = [
+                'preset-messages-button',
+                'preset-messages-modal', 
+                'close-modal'
+            ];
+            
+            elementsToCreate.forEach(id => {
+                if (!document.getElementById(id)) {
+                    const element = document.createElement('div');
+                    element.id = id;
+                    element.style.display = 'none';
+                    document.body.appendChild(element);
+                }
+            });
+            
+            console.log('✅ All required DOM elements created for Khaki interface');
+        }
         
         // Auto-assign Khaki number
         function assignKhakiNumber() {
@@ -416,41 +446,35 @@
             }
             
             document.getElementById('assigned-callsign').textContent = khakiCallsign;
+            
+            // Update the hidden input if it exists
+            const callsignInput = document.getElementById('callsign');
+            if (callsignInput) {
+                callsignInput.value = khakiCallsign;
+            }
+            
+            console.log('🎖️ Assigned Khaki callsign:', khakiCallsign);
             return khakiCallsign;
         }
         
-        // Create hidden elements that app.js expects
-        function createHiddenElements() {
-            // Create hidden callsign input that app.js expects
-            if (!document.getElementById('callsign')) {
-                const hiddenInput = document.createElement('input');
-                hiddenInput.id = 'callsign';
-                hiddenInput.type = 'hidden';
-                hiddenInput.value = khakiCallsign;
-                document.body.appendChild(hiddenInput);
-            }
+        // Initialize everything before app.js loads
+        function initializeKhakiInterface() {
+            console.log('🎖️ Initializing Khaki Command Interface...');
             
-            // Create hidden preset messages elements if they don't exist
-            if (!document.getElementById('preset-messages-button')) {
-                const hiddenButton = document.createElement('button');
-                hiddenButton.id = 'preset-messages-button';
-                hiddenButton.style.display = 'none';
-                document.body.appendChild(hiddenButton);
-            }
+            // Create all required elements first
+            createRequiredElements();
             
-            if (!document.getElementById('preset-messages-modal')) {
-                const hiddenModal = document.createElement('div');
-                hiddenModal.id = 'preset-messages-modal';
-                hiddenModal.style.display = 'none';
-                document.body.appendChild(hiddenModal);
-            }
+            // Assign Khaki number
+            assignKhakiNumber();
             
-            if (!document.getElementById('close-modal')) {
-                const hiddenClose = document.createElement('button');
-                hiddenClose.id = 'close-modal';
-                hiddenClose.style.display = 'none';
-                document.body.appendChild(hiddenClose);
-            }
+            // Initialize recordings
+            initRecordingsAudioContext();
+            loadRecordings();
+            
+            // Set up global variables for app.js
+            window.rangerCallsign = khakiCallsign;
+            
+            console.log('✅ Khaki interface initialized, ready for app.js');
         }
         
         // Initialize recordings audio context
@@ -477,20 +501,29 @@
         
         // Update recordings statistics
         function updateRecordingsStats() {
-            document.getElementById('total-recordings').textContent = recordings.length;
+            const totalEl = document.getElementById('total-recordings');
+            const durationEl = document.getElementById('total-duration');
+            const storageEl = document.getElementById('storage-used');
             
-            const totalDuration = recordings.reduce((sum, rec) => sum + (rec.duration || 0), 0);
-            const minutes = Math.floor(totalDuration / 60);
-            const seconds = Math.floor(totalDuration % 60);
-            document.getElementById('total-duration').textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+            if (totalEl) totalEl.textContent = recordings.length;
             
-            const totalSize = recordings.reduce((sum, rec) => sum + (rec.size || 0), 0);
-            document.getElementById('storage-used').textContent = `${(totalSize / 1024 / 1024).toFixed(1)} MB`;
+            if (durationEl) {
+                const totalDuration = recordings.reduce((sum, rec) => sum + (rec.duration || 0), 0);
+                const minutes = Math.floor(totalDuration / 60);
+                const seconds = Math.floor(totalDuration % 60);
+                durationEl.textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+            }
+            
+            if (storageEl) {
+                const totalSize = recordings.reduce((sum, rec) => sum + (rec.size || 0), 0);
+                storageEl.textContent = `${(totalSize / 1024 / 1024).toFixed(1)} MB`;
+            }
         }
         
         // Render recordings list (most recent first)
         function renderRecordings() {
             const container = document.getElementById('recordings-list');
+            if (!container) return;
             
             if (recordings.length === 0) {
                 container.innerHTML = `
@@ -697,56 +730,54 @@
             }
         }
         
-        // Override the rangerCallsign for the main app
-        window.addEventListener('DOMContentLoaded', () => {
-            assignKhakiNumber();
-            createHiddenElements(); // Create elements that app.js expects
-            initRecordingsAudioContext();
-            loadRecordings();
+        // Initialize everything when DOM is ready
+        document.addEventListener('DOMContentLoaded', () => {
+            console.log('🎖️ DOM loaded, initializing Khaki interface...');
+            initializeKhakiInterface();
             
             // Add clear recordings button listener
-            document.getElementById('clear-all-recordings').addEventListener('click', clearAllRecordings);
+            const clearButton = document.getElementById('clear-all-recordings');
+            if (clearButton) {
+                clearButton.addEventListener('click', clearAllRecordings);
+            }
+        });
+        
+        // Set up Khaki-specific behavior after app.js loads
+        window.addEventListener('load', () => {
+            console.log('🎖️ Page fully loaded, setting up Khaki functionality...');
             
-            // Pre-fill the callsign for when app.js loads
-            setTimeout(() => {
-                if (window.rangerCallsign === null) {
-                    window.rangerCallsign = khakiCallsign;
-                }
+            // Override joinNetwork to automatically use Khaki callsign
+            window.joinNetwork = function() {
+                console.log('🎖️ Khaki joining network with callsign:', khakiCallsign);
                 
-                // Ensure the hidden callsign input has the right value
+                // Set the callsign input value
                 const callsignInput = document.getElementById('callsign');
                 if (callsignInput) {
                     callsignInput.value = khakiCallsign;
                 }
-            }, 100);
-        });
-        
-        // Add Khaki-specific styling and behavior
-        document.addEventListener('DOMContentLoaded', () => {
-            // Update the join button to use Khaki callsign
+                
+                // Set the global variable
+                window.rangerCallsign = khakiCallsign;
+                
+                // Connect to server
+                if (window.connectToServer && typeof window.connectToServer === 'function') {
+                    window.connectToServer();
+                } else {
+                    console.error('❌ connectToServer function not available yet');
+                    // Try again after a short delay
+                    setTimeout(() => {
+                        if (window.connectToServer && typeof window.connectToServer === 'function') {
+                            window.connectToServer();
+                        } else {
+                            console.error('❌ connectToServer still not available');
+                        }
+                    }, 1000);
+                }
+            };
+            
+            // Set up join button
             const joinButton = document.getElementById('join-button');
             if (joinButton) {
-                // Override joinNetwork to automatically use Khaki callsign
-                window.joinNetwork = function() {
-                    // Set the callsign input value
-                    const callsignInput = document.getElementById('callsign');
-                    if (callsignInput) {
-                        callsignInput.value = khakiCallsign;
-                    }
-                    
-                    // Set the global variable
-                    window.rangerCallsign = khakiCallsign;
-                    
-                    console.log('🎖️ Khaki joining network with callsign:', khakiCallsign);
-                    
-                    // Connect to server
-                    if (window.connectToServer) {
-                        window.connectToServer();
-                    } else {
-                        console.error('connectToServer function not available');
-                    }
-                };
-                
                 joinButton.addEventListener('click', () => {
                     console.log('🎖️ Khaki join button clicked');
                     window.joinNetwork();
@@ -754,8 +785,8 @@
             }
             
             // Add special Khaki logging
-            const originalAddToActivityLog = window.addToActivityLog;
-            if (originalAddToActivityLog) {
+            if (window.addToActivityLog && typeof window.addToActivityLog === 'function') {
+                const originalAddToActivityLog = window.addToActivityLog;
                 window.addToActivityLog = function(message) {
                     // Add Khaki prefix to certain messages
                     if (message.includes('joined the radio network')) {
@@ -763,17 +794,15 @@
                     }
                     originalAddToActivityLog(message);
                 };
-            }
-            
-            // Show initial Khaki instructions
-            setTimeout(() => {
-                if (window.addToActivityLog) {
+                
+                // Show initial Khaki instructions
+                setTimeout(() => {
                     window.addToActivityLog('🎖️ Khaki Command Network Interface Loaded');
                     window.addToActivityLog(`Assigned callsign: ${khakiCallsign}`);
                     window.addToActivityLog('Click "Join Khaki Command Network" to begin operations');
                     window.addToActivityLog('📡 Command staff can monitor all radio traffic');
-                }
-            }, 500);
+                }, 500);
+            }
         });
         
         // Listen for new recordings from localStorage and refresh display
