@@ -383,6 +383,8 @@
     
     <!-- Load configuration and main app -->
     <script src="config-loader.js"></script>
+    <!-- Add Socket.IO library -->
+    <script src="/socket.io/socket.io.js"></script>
     <script>
         // Khaki-specific functionality
         let assignedKhakiNumber = null;
@@ -415,6 +417,40 @@
             
             document.getElementById('assigned-callsign').textContent = khakiCallsign;
             return khakiCallsign;
+        }
+        
+        // Create hidden elements that app.js expects
+        function createHiddenElements() {
+            // Create hidden callsign input that app.js expects
+            if (!document.getElementById('callsign')) {
+                const hiddenInput = document.createElement('input');
+                hiddenInput.id = 'callsign';
+                hiddenInput.type = 'hidden';
+                hiddenInput.value = khakiCallsign;
+                document.body.appendChild(hiddenInput);
+            }
+            
+            // Create hidden preset messages elements if they don't exist
+            if (!document.getElementById('preset-messages-button')) {
+                const hiddenButton = document.createElement('button');
+                hiddenButton.id = 'preset-messages-button';
+                hiddenButton.style.display = 'none';
+                document.body.appendChild(hiddenButton);
+            }
+            
+            if (!document.getElementById('preset-messages-modal')) {
+                const hiddenModal = document.createElement('div');
+                hiddenModal.id = 'preset-messages-modal';
+                hiddenModal.style.display = 'none';
+                document.body.appendChild(hiddenModal);
+            }
+            
+            if (!document.getElementById('close-modal')) {
+                const hiddenClose = document.createElement('button');
+                hiddenClose.id = 'close-modal';
+                hiddenClose.style.display = 'none';
+                document.body.appendChild(hiddenClose);
+            }
         }
         
         // Initialize recordings audio context
@@ -664,6 +700,7 @@
         // Override the rangerCallsign for the main app
         window.addEventListener('DOMContentLoaded', () => {
             assignKhakiNumber();
+            createHiddenElements(); // Create elements that app.js expects
             initRecordingsAudioContext();
             loadRecordings();
             
@@ -675,6 +712,12 @@
                 if (window.rangerCallsign === null) {
                     window.rangerCallsign = khakiCallsign;
                 }
+                
+                // Ensure the hidden callsign input has the right value
+                const callsignInput = document.getElementById('callsign');
+                if (callsignInput) {
+                    callsignInput.value = khakiCallsign;
+                }
             }, 100);
         });
         
@@ -683,8 +726,6 @@
             // Update the join button to use Khaki callsign
             const joinButton = document.getElementById('join-button');
             if (joinButton) {
-                const originalJoinNetwork = window.joinNetwork;
-                
                 // Override joinNetwork to automatically use Khaki callsign
                 window.joinNetwork = function() {
                     // Set the callsign input value
@@ -696,13 +737,18 @@
                     // Set the global variable
                     window.rangerCallsign = khakiCallsign;
                     
+                    console.log('🎖️ Khaki joining network with callsign:', khakiCallsign);
+                    
                     // Connect to server
                     if (window.connectToServer) {
                         window.connectToServer();
+                    } else {
+                        console.error('connectToServer function not available');
                     }
                 };
                 
                 joinButton.addEventListener('click', () => {
+                    console.log('🎖️ Khaki join button clicked');
                     window.joinNetwork();
                 });
             }
