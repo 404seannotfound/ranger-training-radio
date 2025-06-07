@@ -750,16 +750,38 @@
             window.joinNetwork = function() {
                 console.log('🎖️ Khaki joining network with callsign:', khakiCallsign);
                 
-                // Set the callsign input value
+                // Ensure we have a valid Khaki callsign
+                if (!khakiCallsign) {
+                    assignKhakiNumber();
+                }
+                
+                // Set the callsign input value BEFORE any validation
                 const callsignInput = document.getElementById('callsign');
                 if (callsignInput) {
                     callsignInput.value = khakiCallsign;
+                    console.log('✅ Set callsign input to:', khakiCallsign);
+                } else {
+                    console.error('❌ Callsign input not found, creating it...');
+                    const newInput = document.createElement('input');
+                    newInput.id = 'callsign';
+                    newInput.type = 'hidden';
+                    newInput.value = khakiCallsign;
+                    document.body.appendChild(newInput);
                 }
                 
                 // Set the global variable
                 window.rangerCallsign = khakiCallsign;
                 
-                // Connect to server
+                // Call the original joinNetwork logic by duplicating it here to avoid validation issues
+                if (!khakiCallsign || khakiCallsign.length < 2 || khakiCallsign.length > 10) {
+                    console.error('❌ Invalid Khaki callsign:', khakiCallsign);
+                    alert('Error with auto-assigned Khaki callsign');
+                    return;
+                }
+                
+                console.log('📡 Connecting to server with Khaki callsign:', khakiCallsign);
+                
+                // Connect to server directly
                 if (window.connectToServer && typeof window.connectToServer === 'function') {
                     window.connectToServer();
                 } else {
@@ -770,6 +792,7 @@
                             window.connectToServer();
                         } else {
                             console.error('❌ connectToServer still not available');
+                            alert('Connection function not ready. Please try again in a moment.');
                         }
                     }, 1000);
                 }
@@ -782,6 +805,8 @@
                     console.log('🎖️ Khaki join button clicked');
                     window.joinNetwork();
                 });
+            } else {
+                console.error('❌ Join button not found');
             }
             
             // Add special Khaki logging
