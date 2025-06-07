@@ -1037,21 +1037,76 @@ async function playReceivedAudio(audioData) {
             
             console.log('🔍 DEBUG: Audio routed to selected output device');
         } else if (selectedSpeakerId && (selectedSpeakerId === 'mobile-speaker' || selectedSpeakerId === 'mobile-earpiece')) {
-            // Handle mobile-specific speaker routing
-            gainNode.connect(audioContext.destination);
+            // Handle mobile-specific speaker routing with actual audio element routing
+            const destination = audioContext.createMediaStreamDestination();
+            gainNode.connect(destination);
             
-            // For mobile devices, we can't actually control speaker vs earpiece directly
-            // But we can adjust volume and provide feedback about the selection
-            if (selectedSpeakerId === 'mobile-speaker') {
-                console.log('🔍 DEBUG: Audio set for mobile speaker (louder volume recommended)');
-                addToActivityLog('📢 Using speakerphone - increase volume if needed');
-                // Increase gain slightly for speaker
-                gainNode.gain.value = Math.min(1.0, gainNode.gain.value * 1.2);
-            } else {
-                console.log('🔍 DEBUG: Audio set for mobile earpiece (lower volume recommended)');
-                addToActivityLog('📞 Using earpiece - lower volume recommended');
-                // Keep normal gain for earpiece
+            // Create or get the appropriate audio element for mobile routing
+            let audioElement = document.getElementById(`audio-output-${selectedSpeakerId}`);
+            if (!audioElement) {
+                audioElement = document.createElement('audio');
+                audioElement.id = `audio-output-${selectedSpeakerId}`;
+                audioElement.style.display = 'none';
+                
+                // Configure audio element for different mobile outputs
+                if (selectedSpeakerId === 'mobile-speaker') {
+                    // Configure for speakerphone
+                    audioElement.setAttribute('playsinline', 'true');
+                    audioElement.setAttribute('webkit-playsinline', 'true');
+                    audioElement.volume = 1.0;
+                    
+                    // Try to force speaker mode (Android specific)
+                    if (navigator.userAgent.includes('Android')) {
+                        audioElement.setAttribute('data-android-speaker', 'true');
+                    }
+                    
+                    console.log('🔍 DEBUG: Configured audio element for mobile speaker');
+                    addToActivityLog('📢 Routing to speakerphone');
+                } else {
+                    // Configure for earpiece
+                    audioElement.setAttribute('playsinline', 'true');
+                    audioElement.setAttribute('webkit-playsinline', 'true');
+                    audioElement.volume = 0.8; // Lower volume for earpiece
+                    
+                    console.log('🔍 DEBUG: Configured audio element for mobile earpiece');
+                    addToActivityLog('📞 Routing to earpiece');
+                }
+                
+                document.body.appendChild(audioElement);
             }
+            
+            // Route audio through the configured element
+            audioElement.srcObject = destination.stream;
+            
+            // Add event listeners for better debugging
+            audioElement.onloadstart = () => {
+                console.log(`Mobile audio loading on ${selectedSpeakerId}`);
+            };
+            
+            audioElement.oncanplay = () => {
+                console.log(`Mobile audio ready on ${selectedSpeakerId}`);
+            };
+            
+            audioElement.onerror = (error) => {
+                console.error(`Mobile audio error on ${selectedSpeakerId}:`, error);
+                addToActivityLog(`❌ Mobile audio error: ${error.message || 'Unknown error'}`);
+            };
+            
+            // Start playback
+            audioElement.play().then(() => {
+                console.log(`✅ Mobile audio playing on ${selectedSpeakerId}`);
+                addToActivityLog(`🎵 Audio playing via ${selectedSpeakerId === 'mobile-speaker' ? 'speaker' : 'earpiece'}`);
+            }).catch(error => {
+                console.error('Mobile audio play failed:', error);
+                addToActivityLog(`❌ Audio playback failed: ${error.message}`);
+                
+                // Fallback to default output
+                gainNode.disconnect();
+                gainNode.connect(audioContext.destination);
+                addToActivityLog('🔄 Falling back to default audio output');
+            });
+            
+            console.log('🔍 DEBUG: Audio routed to mobile device via audio element');
         } else {
             // Use default audio context destination
             gainNode.connect(audioContext.destination);
@@ -1578,12 +1633,25 @@ function showMobileAudioGuidance() {
     
     if (isMobile) {
         // Add mobile-specific guidance to activity log
-        addToActivityLog('📱 Mobile Audio Tips:');
-        addToActivityLog('• Select "Speaker" for louder audio (speakerphone mode)');
-        addToActivityLog('• Select "Earpiece" for private listening');
-        addToActivityLog('• Use wired headphones for best quality');
-        addToActivityLog('• Bluetooth may have slight delays');
-        addToActivityLog('• Check phone volume and ringer settings');
+        addToActivityLog('📱 Mobile Audio Setup Guide:');
+        addToActivityLog('• 📢 Speaker = Loud speakerphone mode');
+        addToActivityLog('• 📞 Earpiece = Quiet phone call mode');
+        addToActivityLog('• Test both options to see which works');
+        addToActivityLog('• For iOS: May need to adjust phone volume');
+        addToActivityLog('• For Android: Try silent/vibrate mode off');
+        
+        // Add specific mobile audio tips based on platform
+        if (navigator.userAgent.includes('iPhone') || navigator.userAgent.includes('iPad')) {
+            addToActivityLog('🍎 iOS Tips:');
+            addToActivityLog('• Use Control Center volume slider');
+            addToActivityLog('• Turn off "Silent Mode" switch');
+            addToActivityLog('• Try connecting Bluetooth headphones');
+        } else if (navigator.userAgent.includes('Android')) {
+            addToActivityLog('🤖 Android Tips:');
+            addToActivityLog('• Check media volume (not ringer volume)');
+            addToActivityLog('• Try speaker option for louder audio');
+            addToActivityLog('• Disable battery optimization for browser');
+        }
         
         // Update the audio devices section with mobile info
         const audioDevicesSection = document.querySelector('.audio-devices-section');
@@ -1591,14 +1659,20 @@ function showMobileAudioGuidance() {
             const mobileInfo = document.createElement('div');
             mobileInfo.className = 'mobile-audio-info';
             mobileInfo.innerHTML = `
-                <p><strong>📱 Mobile Device Detected</strong></p>
-                <p>Choose your preferred audio output:</p>
-                <ul>
-                    <li><strong>📢 Speaker:</strong> Louder audio (speakerphone)</li>
-                    <li><strong>📞 Earpiece:</strong> Private listening</li>
-                    <li><strong>🎧 Headphones:</strong> Best quality (if connected)</li>
-                </ul>
-                <p><em>Tip: Test different options to find what works best!</em></p>
+                <p><strong>📱 Mobile Audio Control</strong></p>
+                <div style="margin: 10px 0;">
+                    <button id="mobile-audio-test" style="padding: 8px 12px; margin-right: 10px; background: #3498db; color: white; border: none; border-radius: 4px;">
+                        🔊 Test Audio Output
+                    </button>
+                    <button id="mobile-volume-check" style="padding: 8px 12px; background: #27ae60; color: white; border: none; border-radius: 4px;">
+                        📱 Check Volume
+                    </button>
+                </div>
+                <div style="font-size: 12px; color: #666;">
+                    <p><strong>📢 Speaker:</strong> Loud speakerphone mode</p>
+                    <p><strong>📞 Earpiece:</strong> Phone call mode (quieter)</p>
+                    <p><strong>🎧 Tip:</strong> Wired headphones often work best</p>
+                </div>
             `;
             mobileInfo.style.marginTop = '10px';
             mobileInfo.style.padding = '10px';
@@ -1608,6 +1682,133 @@ function showMobileAudioGuidance() {
             mobileInfo.style.fontSize = '14px';
             
             audioDevicesSection.appendChild(mobileInfo);
+            
+            // Add event listeners for mobile test buttons
+            document.getElementById('mobile-audio-test').addEventListener('click', testMobileAudio);
+            document.getElementById('mobile-volume-check').addEventListener('click', showVolumeInstructions);
         }
     }
+}
+
+// Test mobile audio output
+function testMobileAudio() {
+    addToActivityLog('🔊 Testing mobile audio output...');
+    
+    // Play a longer, more obvious test tone
+    if (audioContext) {
+        // Create a more complex test sound for mobile
+        const duration = 2; // 2 seconds
+        const sampleRate = audioContext.sampleRate;
+        const buffer = audioContext.createBuffer(1, sampleRate * duration, sampleRate);
+        const data = buffer.getChannelData(0);
+        
+        // Create a beep pattern: 800Hz for 0.3s, silence for 0.2s, 400Hz for 0.3s
+        for (let i = 0; i < buffer.length; i++) {
+            const time = i / sampleRate;
+            let frequency = 0;
+            
+            if (time < 0.3) {
+                frequency = 800; // High beep
+            } else if (time < 0.5) {
+                frequency = 0; // Silence
+            } else if (time < 0.8) {
+                frequency = 400; // Low beep
+            } else if (time < 1.0) {
+                frequency = 0; // Silence
+            } else if (time < 1.3) {
+                frequency = 600; // Medium beep
+            }
+            
+            if (frequency > 0) {
+                data[i] = Math.sin(2 * Math.PI * frequency * time) * 0.3;
+            } else {
+                data[i] = 0;
+            }
+        }
+        
+        // Play using the same routing logic as received audio
+        const source = audioContext.createBufferSource();
+        const gainNode = audioContext.createGain();
+        
+        source.buffer = buffer;
+        source.connect(gainNode);
+        
+        const volume = volumeSlider.value / 100;
+        gainNode.gain.value = volume;
+        
+        // Use the same mobile routing logic
+        if (selectedSpeakerId && (selectedSpeakerId === 'mobile-speaker' || selectedSpeakerId === 'mobile-earpiece')) {
+            const destination = audioContext.createMediaStreamDestination();
+            gainNode.connect(destination);
+            
+            let audioElement = document.getElementById(`audio-output-${selectedSpeakerId}`);
+            if (!audioElement) {
+                audioElement = document.createElement('audio');
+                audioElement.id = `audio-output-${selectedSpeakerId}`;
+                audioElement.style.display = 'none';
+                
+                if (selectedSpeakerId === 'mobile-speaker') {
+                    audioElement.setAttribute('playsinline', 'true');
+                    audioElement.volume = 1.0;
+                } else {
+                    audioElement.setAttribute('playsinline', 'true');
+                    audioElement.volume = 0.8;
+                }
+                
+                document.body.appendChild(audioElement);
+            }
+            
+            audioElement.srcObject = destination.stream;
+            audioElement.play().then(() => {
+                addToActivityLog(`🎵 Test playing via ${selectedSpeakerId === 'mobile-speaker' ? 'speaker' : 'earpiece'}`);
+            }).catch(error => {
+                addToActivityLog(`❌ Test playback failed: ${error.message}`);
+                // Fallback
+                gainNode.disconnect();
+                gainNode.connect(audioContext.destination);
+            });
+        } else {
+            gainNode.connect(audioContext.destination);
+        }
+        
+        source.start();
+        
+        addToActivityLog('🎵 Playing test pattern: High-Low-Medium beeps');
+        addToActivityLog(`📊 Volume setting: ${volume * 100}%`);
+        
+    } else {
+        addToActivityLog('❌ Audio context not available for testing');
+    }
+}
+
+// Show volume instructions for mobile
+function showVolumeInstructions() {
+    addToActivityLog('📱 Mobile Volume Check:');
+    
+    const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+    const isAndroid = /Android/i.test(navigator.userAgent);
+    
+    if (isIOS) {
+        addToActivityLog('🍎 iOS Volume Instructions:');
+        addToActivityLog('1. Use volume buttons on side of device');
+        addToActivityLog('2. Check Control Center volume slider');
+        addToActivityLog('3. Make sure silent switch is OFF');
+        addToActivityLog('4. Go to Settings > Sounds & Haptics');
+        addToActivityLog('5. Adjust "Ringer and Alerts" volume');
+    } else if (isAndroid) {
+        addToActivityLog('🤖 Android Volume Instructions:');
+        addToActivityLog('1. Press volume UP button');
+        addToActivityLog('2. Tap settings gear icon');
+        addToActivityLog('3. Increase MEDIA volume (not ringtone)');
+        addToActivityLog('4. Try Do Not Disturb = OFF');
+        addToActivityLog('5. Check app-specific volume in Settings');
+    } else {
+        addToActivityLog('📱 Mobile Volume Instructions:');
+        addToActivityLog('1. Use device volume buttons');
+        addToActivityLog('2. Check system audio settings');
+        addToActivityLog('3. Ensure media volume is up');
+        addToActivityLog('4. Try different speaker options');
+    }
+    
+    addToActivityLog('💡 After adjusting volume, run audio test again');
 }
