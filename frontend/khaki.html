@@ -558,7 +558,7 @@
                 });
             }
             
-            // Add special Khaki logging
+            // Add special Khaki logging and hook into recording system
             if (window.addToActivityLog && typeof window.addToActivityLog === 'function') {
                 const originalAddToActivityLog = window.addToActivityLog;
                 window.addToActivityLog = function(message) {
@@ -575,7 +575,16 @@
                         }
                     }
                     
+                    // Call original function
                     originalAddToActivityLog(message);
+                    
+                    // Check for recording saved messages from app.js
+                    if (message.includes('Recording saved')) {
+                        // Wait a bit then check for new recordings
+                        setTimeout(() => {
+                            checkForNewRecordings();
+                        }, 100);
+                    }
                 };
                 
                 // Show initial Khaki instructions
@@ -587,35 +596,32 @@
                 }, 500);
             }
             
-            // Hook into the recording system
-            if (window.localStorage && typeof window.addEventListener === 'function') {
-                // Listen for storage events from app.js recordings
-                const originalSetItem = localStorage.setItem;
-                localStorage.setItem = function(key, value) {
-                    if (key === 'rangerRadioRecordings') {
-                        try {
-                            const newRecordings = JSON.parse(value);
-                            const lastRecording = newRecordings[newRecordings.length - 1];
-                            
-                            if (lastRecording && lastRecording.audioData && lastRecording.duration) {
+            // Check for new recordings without overriding localStorage
+            function checkForNewRecordings() {
+                try {
+                    const stored = localStorage.getItem('rangerRadioRecordings');
+                    if (stored) {
+                        const allRecordings = JSON.parse(stored);
+                        const lastRecording = allRecordings[allRecordings.length - 1];
+                        
+                        if (lastRecording && lastRecording.audioData && lastRecording.duration) {
+                            // Check if this is a new recording we haven't processed
+                            const lastProcessedId = window.lastProcessedRecordingId || 0;
+                            if (lastRecording.id > lastProcessedId) {
+                                window.lastProcessedRecordingId = lastRecording.id;
+                                
                                 // Add this transmission to the current session
                                 addTransmissionToSession(
                                     lastRecording.callsign,
                                     lastRecording.audioData,
                                     lastRecording.duration
                                 );
-                                
-                                // Don't actually save individual recordings - we'll save sessions instead
-                                return;
                             }
-                        } catch (error) {
-                            console.error('Error processing recording:', error);
                         }
                     }
-                    
-                    // Call original for other items
-                    originalSetItem.call(this, key, value);
-                };
+                } catch (error) {
+                    console.error('Error checking for new recordings:', error);
+                }
             }
         });
         
