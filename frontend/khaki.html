@@ -468,43 +468,6 @@
             return khakiCallsign;
         }
         
-        // Override joinNetwork BEFORE app.js loads
-        window.joinNetwork = function() {
-            console.log('🎖️ Khaki override joinNetwork called with:', khakiCallsign);
-            
-            // Ensure we have a callsign
-            if (!khakiCallsign) {
-                assignKhakiNumber();
-            }
-            
-            // Validate callsign
-            if (!khakiCallsign || khakiCallsign.length < 2 || khakiCallsign.length > 10) {
-                console.error('❌ Invalid Khaki callsign:', khakiCallsign);
-                alert('Error with auto-assigned Khaki callsign');
-                return;
-            }
-            
-            // Set the global variable
-            window.rangerCallsign = khakiCallsign;
-            
-            console.log('📡 Connecting to server with Khaki callsign:', khakiCallsign);
-            
-            // Connect to server
-            if (window.connectToServer && typeof window.connectToServer === 'function') {
-                window.connectToServer();
-            } else {
-                console.log('⏳ connectToServer not ready yet, will retry...');
-                setTimeout(() => {
-                    if (window.connectToServer && typeof window.connectToServer === 'function') {
-                        window.connectToServer();
-                    } else {
-                        console.error('❌ connectToServer still not available');
-                        alert('Connection function not ready. Please try again in a moment.');
-                    }
-                }, 1000);
-            }
-        };
-        
         // Initialize when DOM is ready
         document.addEventListener('DOMContentLoaded', () => {
             console.log('🎖️ DOM loaded, initializing Khaki interface...');
@@ -556,12 +519,37 @@
         window.addEventListener('load', () => {
             console.log('🎖️ Page fully loaded, setting up additional Khaki functionality...');
             
-            // Set up join button
+            // Store the original joinNetwork function from app.js
+            const originalJoinNetwork = window.joinNetwork;
+            
+            // Set up join button with Khaki-specific logic
             const joinButton = document.getElementById('join-button');
             if (joinButton) {
                 joinButton.addEventListener('click', () => {
                     console.log('🎖️ Khaki join button clicked');
-                    window.joinNetwork();
+                    
+                    // Ensure we have a callsign
+                    if (!khakiCallsign) {
+                        assignKhakiNumber();
+                    }
+                    
+                    // Set the callsign input that app.js expects
+                    const callsignInput = document.getElementById('callsign');
+                    if (callsignInput) {
+                        callsignInput.value = khakiCallsign;
+                    }
+                    
+                    // Set the global variable
+                    window.rangerCallsign = khakiCallsign;
+                    
+                    console.log('📡 Using original app.js joinNetwork with Khaki callsign:', khakiCallsign);
+                    
+                    // Call the original joinNetwork function
+                    if (originalJoinNetwork && typeof originalJoinNetwork === 'function') {
+                        originalJoinNetwork();
+                    } else {
+                        alert('Join function not available. Please refresh the page.');
+                    }
                 });
             }
             
