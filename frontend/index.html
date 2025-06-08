@@ -216,47 +216,8 @@
         </main>
 
         <footer>
-            <button id="preset-messages-button" class="btn btn-secondary">Preset Messages</button>
-            <a href="khaki.html" class="btn btn-secondary" style="text-decoration: none;">📻 Recording History</a>
             <button id="exit-button" class="btn btn-danger">Exit Network</button>
         </footer>
-    </div>
-
-    <!-- Preset Messages Modal -->
-    <div id="preset-messages-modal" class="modal" style="display: none;">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2>Preset Messages</h2>
-                <button id="close-modal" class="close-button">&times;</button>
-            </div>
-            <div class="modal-body">
-                <div class="api-key-section">
-                    <label for="openai-key">OpenAI API Key</label>
-                    <input type="password" id="openai-key" placeholder="sk-...">
-                </div>
-                
-                <div class="voice-selection">
-                    <label for="voice-select">Voice Selection</label>
-                    <select id="voice-select">
-                        <option value="alloy">Alloy</option>
-                        <option value="echo">Echo</option>
-                        <option value="fable">Fable</option>
-                        <option value="onyx">Onyx</option>
-                        <option value="nova">Nova</option>
-                        <option value="shimmer">Shimmer</option>
-                    </select>
-                </div>
-
-                <div class="preset-messages-list">
-                    <h3>Preset Messages</h3>
-                    <div id="preset-list"></div>
-                    <div class="add-preset">
-                        <input type="text" id="new-preset" placeholder="New Preset Message">
-                        <button id="add-preset-button" class="btn btn-primary">Add Preset</button>
-                    </div>
-                </div>
-            </div>
-        </div>
     </div>
 
     <!-- Transmission Indicator -->

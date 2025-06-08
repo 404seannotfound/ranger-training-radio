@@ -175,6 +175,24 @@
             color: #666;
         }
         
+        .recording-summary {
+            font-size: 0.85em;
+            color: #8B4513;
+            font-style: italic;
+            margin-top: 3px;
+        }
+        
+        .conversation-flow {
+            font-size: 0.8em;
+            color: #666;
+            font-family: monospace;
+            margin-top: 3px;
+            padding: 3px 6px;
+            background: #f8f9fa;
+            border-radius: 3px;
+            border-left: 3px solid #8B4513;
+        }
+        
         .recording-controls {
             display: flex;
             gap: 8px;
@@ -361,8 +379,11 @@
             <!-- Recordings Section -->
             <div class="recordings-section">
                 <div class="recordings-header">
-                    <h3 class="recordings-title">📼 Radio Recordings</h3>
-                    <button id="clear-all-recordings" class="clear-recordings-button">🗑️ Clear All</button>
+                    <h3 class="recordings-title">📼 Radio Sessions</h3>
+                    <div style="display: flex; gap: 10px;">
+                        <button id="finish-session-button" class="clear-recordings-button" style="background: #27ae60;">📼 Finish Current Session</button>
+                        <button id="clear-all-recordings" class="clear-recordings-button">🗑️ Clear All</button>
+                    </div>
                 </div>
                 
                 <div class="recordings-stats">
@@ -382,7 +403,7 @@
                 
                 <div id="recordings-list" class="recordings-list">
                     <div class="recordings-empty">
-                        No recordings yet. Start using the radio to record transmissions.
+                        No radio sessions recorded yet. Conversations will be automatically saved as complete sessions.
                     </div>
                 </div>
             </div>
@@ -398,10 +419,15 @@
         let assignedKhakiNumber = null;
         let khakiCallsign = null;
         
-        // Recordings functionality
+        // Recordings functionality - SESSION BASED
         let recordings = [];
         let currentlyPlaying = null;
         let recordingsAudioContext = null;
+        let currentSession = null;
+        let sessionStartTime = null;
+        const MIN_TRANSMISSION_DURATION = 2; // seconds - ignore transmissions shorter than this (noise/accidental key-ups)
+        const SESSION_TIMEOUT = 45; // seconds - close session after this much silence (longer for radio conversations)
+        let sessionTimeout = null;
         
         // Auto-assign Khaki number and update DOM immediately
         function assignKhakiNumber() {
@@ -489,6 +515,33 @@
                 clearButton.addEventListener('click', clearAllRecordings);
             }
             
+            // Add finish session button listener
+            const finishButton = document.getElementById('finish-session-button');
+            if (finishButton) {
+                finishButton.addEventListener('click', () => {
+                    if (currentSession) {
+                        finishCurrentSession();
+                        addToActivityLog('📼 Current recording session saved manually');
+                    } else {
+                        alert('No active recording session to save');
+                    }
+                });
+            }
+            
+            // Update finish session button visibility
+            setInterval(() => {
+                const finishButton = document.getElementById('finish-session-button');
+                if (finishButton) {
+                    if (currentSession) {
+                        finishButton.style.display = 'block';
+                        finishButton.style.background = '#27ae60';
+                        finishButton.textContent = `📼 Finish Session (${currentSession.transmissions.length} transmissions)`;
+                    } else {
+                        finishButton.style.display = 'none';
+                    }
+                }
+            }, 1000);
+            
             console.log('✅ Khaki interface initialized, ready for app.js');
         });
         
@@ -513,6 +566,15 @@
                     if (message.includes('joined the radio network')) {
                         message = `🎖️ Command Staff ${message}`;
                     }
+                    
+                    // Check for transmission start/end to manage sessions
+                    if (message.includes('started transmitting')) {
+                        const callsign = message.split(' ')[0];
+                        if (!currentSession) {
+                            startNewSession();
+                        }
+                    }
+                    
                     originalAddToActivityLog(message);
                 };
                 
@@ -523,6 +585,37 @@
                     window.addToActivityLog('Click "Join Khaki Command Network" to begin operations');
                     window.addToActivityLog('📡 Command staff can monitor all radio traffic');
                 }, 500);
+            }
+            
+            // Hook into the recording system
+            if (window.localStorage && typeof window.addEventListener === 'function') {
+                // Listen for storage events from app.js recordings
+                const originalSetItem = localStorage.setItem;
+                localStorage.setItem = function(key, value) {
+                    if (key === 'rangerRadioRecordings') {
+                        try {
+                            const newRecordings = JSON.parse(value);
+                            const lastRecording = newRecordings[newRecordings.length - 1];
+                            
+                            if (lastRecording && lastRecording.audioData && lastRecording.duration) {
+                                // Add this transmission to the current session
+                                addTransmissionToSession(
+                                    lastRecording.callsign,
+                                    lastRecording.audioData,
+                                    lastRecording.duration
+                                );
+                                
+                                // Don't actually save individual recordings - we'll save sessions instead
+                                return;
+                            }
+                        } catch (error) {
+                            console.error('Error processing recording:', error);
+                        }
+                    }
+                    
+                    // Call original for other items
+                    originalSetItem.call(this, key, value);
+                };
             }
         });
         
@@ -634,33 +727,34 @@
             if (recordings.length === 0) {
                 container.innerHTML = `
                     <div class="recordings-empty">
-                        No recordings yet. Start using the radio to record transmissions.
+                        No radio sessions recorded yet. Conversations will be automatically saved as complete sessions.
                     </div>
                 `;
                 return;
             }
             
-            // Sort recordings by ID (higher ID = more recent) to ensure newest first
-            const sortedRecordings = [...recordings].sort((a, b) => b.id - a.id);
-            
-            container.innerHTML = sortedRecordings.map((recording, index) => `
-                <div class="recording-item" data-recording-id="${recording.id}">
+            container.innerHTML = recordings.map((session) => `
+                <div class="recording-item" data-recording-id="${session.id}">
                     <div class="recording-info">
                         <div class="recording-title">
-                            ${recording.callsign} - ${recording.type}
+                            📻 ${session.title || `Radio Session ${session.id}`}
                         </div>
                         <div class="recording-meta">
-                            📅 ${recording.timestamp} • ⏱️ ${formatDuration(recording.duration)} • 📊 ${formatSize(recording.size)}
+                            📅 ${new Date(session.startTime).toLocaleString()} • ⏱️ ${formatDuration(session.duration)} • 
+                            🎙️ ${session.transmissions ? session.transmissions.length : 0} transmissions • 
+                            📊 ${formatSize(session.size)}
                         </div>
+                        ${session.summary ? `<div class="recording-summary">${session.summary}</div>` : ''}
+                        ${session.conversationFlow ? `<div class="conversation-flow">🔄 ${session.conversationFlow}</div>` : ''}
                     </div>
                     <div class="recording-controls">
-                        <button class="recording-button play-button" onclick="togglePlayback(${recording.id})">
+                        <button class="recording-button play-button" onclick="togglePlayback(${session.id})">
                             ▶️ Play
                         </button>
-                        <button class="recording-button download-button" onclick="downloadRecording(${recording.id})">
+                        <button class="recording-button download-button" onclick="downloadRecording(${session.id})">
                             ⬇️ Download
                         </button>
-                        <button class="recording-button delete-button" onclick="deleteRecording(${recording.id})">
+                        <button class="recording-button delete-button" onclick="deleteRecording(${session.id})">
                             🗑️ Delete
                         </button>
                     </div>
@@ -686,8 +780,8 @@
         
         // Toggle playback
         function togglePlayback(recordingId) {
-            const recording = recordings.find(r => r.id === recordingId);
-            if (!recording) return;
+            const session = recordings.find(r => r.id === recordingId);
+            if (!session) return;
             
             const button = document.querySelector(`[data-recording-id="${recordingId}"] .play-button`);
             
@@ -710,20 +804,20 @@
                     }
                 }
                 
-                playRecording(recording);
+                playRecording(session);
                 button.textContent = '⏹️ Stop';
                 button.classList.add('playing');
             }
         }
         
         // Play recording
-        function playRecording(recording) {
-            if (!recordingsAudioContext || !recording.audioData) return;
+        function playRecording(session) {
+            if (!recordingsAudioContext || !session.audioData) return;
             
             try {
                 // Convert stored PCM data back to audio buffer
-                const pcmArray = new Int16Array(recording.audioData);
-                const sampleRate = recording.sampleRate || 44100;
+                const pcmArray = new Int16Array(session.audioData);
+                const sampleRate = session.sampleRate || 44100;
                 
                 const audioBuffer = recordingsAudioContext.createBuffer(1, pcmArray.length, sampleRate);
                 const bufferData = audioBuffer.getChannelData(0);
@@ -751,7 +845,7 @@
                 };
                 
                 source.start();
-                currentlyPlaying = { id: recording.id, source };
+                currentlyPlaying = { id: session.id, source };
                 
             } catch (error) {
                 console.error('Playback error:', error);
@@ -761,12 +855,12 @@
         
         // Download recording
         function downloadRecording(recordingId) {
-            const recording = recordings.find(r => r.id === recordingId);
-            if (!recording || !recording.audioData) return;
+            const session = recordings.find(r => r.id === recordingId);
+            if (!session || !session.audioData) return;
             
             // Create a simple WAV file from the PCM data
-            const pcmArray = new Int16Array(recording.audioData);
-            const sampleRate = recording.sampleRate || 44100;
+            const pcmArray = new Int16Array(session.audioData);
+            const sampleRate = session.sampleRate || 44100;
             const wavBuffer = createWavFile(pcmArray, sampleRate);
             
             const blob = new Blob([wavBuffer], { type: 'audio/wav' });
@@ -774,7 +868,8 @@
             
             const a = document.createElement('a');
             a.href = url;
-            a.download = `${recording.callsign}_${recording.timestamp.replace(/[^\w]/g, '_')}.wav`;
+            const fileName = `${session.title || 'Radio_Session'}_${new Date(session.startTime).toISOString().slice(0,19).replace(/[^\w]/g, '_')}.wav`;
+            a.download = fileName;
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
@@ -818,7 +913,7 @@
         
         // Delete recording
         function deleteRecording(recordingId) {
-            if (confirm('Are you sure you want to delete this recording?')) {
+            if (confirm('Are you sure you want to delete this radio session?')) {
                 recordings = recordings.filter(r => r.id !== recordingId);
                 saveRecordings();
                 updateRecordingsStats();
@@ -841,17 +936,137 @@
             }
         }
         
-        // Listen for new recordings from localStorage and refresh display
-        window.addEventListener('storage', (e) => {
-            if (e.key === 'rangerRadioRecordings') {
-                loadRecordings();
+        // Smart recording system - Radio conversation focused
+        function startNewSession() {
+            if (currentSession) {
+                finishCurrentSession();
             }
-        });
+            
+            sessionStartTime = Date.now();
+            currentSession = {
+                id: Date.now(),
+                startTime: sessionStartTime,
+                endTime: null,
+                audioData: [],
+                transmissions: [],
+                participants: new Set(),
+                sampleRate: 44100
+            };
+            
+            console.log('📼 Started new radio conversation session:', currentSession.id);
+            
+            // Clear any existing timeout
+            if (sessionTimeout) {
+                clearTimeout(sessionTimeout);
+                sessionTimeout = null;
+            }
+        }
         
-        // Refresh recordings periodically to catch new ones from this session
-        setInterval(() => {
-            loadRecordings();
-        }, 2000);
+        function addTransmissionToSession(callsign, audioData, duration) {
+            // Only filter out very short transmissions (noise, accidental key-ups)
+            if (duration < MIN_TRANSMISSION_DURATION) {
+                console.log(`📼 Filtering noise: ${callsign} (${duration.toFixed(1)}s)`);
+                return;
+            }
+            
+            // Start new session if none exists
+            if (!currentSession) {
+                startNewSession();
+            }
+            
+            // Add transmission to current session
+            const transmission = {
+                callsign: callsign,
+                timestamp: new Date().toLocaleString(),
+                duration: duration,
+                audioStartIndex: currentSession.audioData.length,
+                isKhaki: callsign.startsWith('KHAKI')
+            };
+            
+            currentSession.transmissions.push(transmission);
+            currentSession.audioData.push(...audioData);
+            currentSession.participants.add(callsign);
+            
+            console.log(`📼 Added ${callsign} transmission (${duration.toFixed(1)}s) to conversation`);
+            
+            // Reset session timeout - conversations can have pauses
+            if (sessionTimeout) {
+                clearTimeout(sessionTimeout);
+            }
+            
+            sessionTimeout = setTimeout(() => {
+                console.log('📼 Session timeout - finishing conversation after silence');
+                finishCurrentSession();
+            }, SESSION_TIMEOUT * 1000);
+        }
+        
+        function finishCurrentSession() {
+            if (!currentSession) return;
+            
+            const sessionDuration = (Date.now() - sessionStartTime) / 1000;
+            
+            // Save ALL radio conversations - don't filter by duration
+            // Even quick exchanges like "Roger" or "Copy" are important
+            if (currentSession.transmissions.length === 0) {
+                console.log('📼 Discarding empty session');
+                currentSession = null;
+                return;
+            }
+            
+            currentSession.endTime = Date.now();
+            currentSession.duration = sessionDuration;
+            currentSession.size = currentSession.audioData.length * 2;
+            
+            // Create meaningful title based on participants (exclude KHAKI as driving node)
+            const participants = Array.from(currentSession.participants);
+            const nonKhakiParticipants = participants.filter(p => !p.startsWith('KHAKI'));
+            const khakiParticipants = participants.filter(p => p.startsWith('KHAKI'));
+            
+            let title;
+            if (nonKhakiParticipants.length >= 2) {
+                // Conversation between field units
+                title = `Radio Traffic: ${nonKhakiParticipants.join(' ↔ ')}`;
+                if (khakiParticipants.length > 0) {
+                    title += ` (+ Command)`;
+                }
+            } else if (nonKhakiParticipants.length === 1 && khakiParticipants.length > 0) {
+                // Coordination between field unit and command
+                title = `Command Coordination: ${nonKhakiParticipants[0]} ↔ ${khakiParticipants[0]}`;
+            } else if (nonKhakiParticipants.length >= 1) {
+                // Single unit traffic
+                title = `Radio Traffic: ${nonKhakiParticipants.join(', ')}`;
+            } else {
+                // Fallback
+                title = `Radio Session: ${participants.join(', ')}`;
+            }
+            
+            currentSession.title = title;
+            currentSession.summary = `${currentSession.transmissions.length} transmissions, ${participants.length} participants`;
+            
+            // Add conversation flow summary
+            const conversationFlow = currentSession.transmissions.map(t => 
+                `${t.callsign}(${t.duration.toFixed(1)}s)`
+            ).join(' → ');
+            currentSession.conversationFlow = conversationFlow;
+            
+            // Save the session
+            recordings.unshift(currentSession); // Add to beginning (newest first)
+            saveRecordings();
+            
+            console.log(`📼 Saved radio conversation: ${currentSession.title}`);
+            console.log(`📼 Flow: ${conversationFlow}`);
+            
+            // Clear session
+            currentSession = null;
+            if (sessionTimeout) {
+                clearTimeout(sessionTimeout);
+                sessionTimeout = null;
+            }
+            
+            // Update UI
+            updateRecordingsStats();
+            renderRecordings();
+        }
     </script>
     
     <!-- Load the main app functionality AFTER overrides are set -->
