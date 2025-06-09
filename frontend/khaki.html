@@ -519,10 +519,7 @@
         window.addEventListener('load', () => {
             console.log('🎖️ Page fully loaded, setting up additional Khaki functionality...');
             
-            // Store the original joinNetwork function from app.js
-            const originalJoinNetwork = window.joinNetwork;
-            
-            // Set up join button with Khaki-specific logic
+            // Set up join button with simple logic
             const joinButton = document.getElementById('join-button');
             if (joinButton) {
                 joinButton.addEventListener('click', () => {
@@ -537,18 +534,17 @@
                     const callsignInput = document.getElementById('callsign');
                     if (callsignInput) {
                         callsignInput.value = khakiCallsign;
+                        console.log('Set callsign input to:', khakiCallsign);
                     }
                     
-                    // Set the global variable
-                    window.rangerCallsign = khakiCallsign;
+                    console.log('📡 Calling joinNetwork...');
                     
-                    console.log('📡 Using original app.js joinNetwork with Khaki callsign:', khakiCallsign);
-                    
-                    // Call the original joinNetwork function
-                    if (originalJoinNetwork && typeof originalJoinNetwork === 'function') {
-                        originalJoinNetwork();
+                    // Just call the global joinNetwork function
+                    if (typeof joinNetwork === 'function') {
+                        joinNetwork();
                     } else {
-                        alert('Join function not available. Please refresh the page.');
+                        console.error('joinNetwork function not found');
+                        alert('Radio system not ready. Please refresh the page and try again.');
                     }
                 });
             }
