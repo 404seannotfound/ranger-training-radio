@@ -539,12 +539,17 @@
                     
                     console.log('📡 Calling joinNetwork...');
                     
-                    // Just call the global joinNetwork function
+                    // Just call the global joinNetwork function - no error checking
                     if (typeof joinNetwork === 'function') {
                         joinNetwork();
                     } else {
                         console.error('joinNetwork function not found');
-                        alert('Radio system not ready. Please refresh the page and try again.');
+                        // Remove the annoying alert and just try again after a short delay
+                        setTimeout(() => {
+                            if (typeof joinNetwork === 'function') {
+                                joinNetwork();
+                            }
+                        }, 1000);
                     }
                 });
             }
