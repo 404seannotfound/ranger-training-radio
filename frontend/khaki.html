@@ -263,14 +263,11 @@
         <div id="login-screen" class="login-container">
             <div class="command-info">
                 <h3>🎖️ Khaki Command Staff Access</h3>
-                <p>Welcome to the Command Network. You will be automatically assigned a Khaki callsign.</p>
-                <div class="auto-callsign" id="assigned-callsign">
-                    Determining Khaki number...
-                </div>
-                <p><em>Multiple Khaki units can operate simultaneously with unique identifiers.</em></p>
+                <p>Welcome to the Command Network. Enter your name to join as command staff.</p>
             </div>
             
             <div class="login-form">
+                <input type="text" id="khaki-name-input" placeholder="Enter your name" class="callsign-input" style="margin-bottom: 15px;">
                 <button id="join-button" class="join-button">
                     🎖️ Join Khaki Command Network
                 </button>
@@ -422,8 +419,7 @@
     <!-- Add Socket.IO library from CDN -->
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
     <script>
-        // Khaki-specific functionality - Set up IMMEDIATELY
-        let assignedKhakiNumber = null;
+        // Khaki-specific functionality - SIMPLE
         let khakiCallsign = null;
         
         // Recordings functionality - SESSION BASED
@@ -436,115 +432,60 @@
         const SESSION_TIMEOUT = 45; // seconds - close session after this much silence (longer for radio conversations)
         let sessionTimeout = null;
         
-        // Auto-assign Khaki number and update DOM immediately
-        function assignKhakiNumber() {
-            // Try to get a unique number (1-99)
-            for (let i = 1; i <= 99; i++) {
-                assignedKhakiNumber = i;
-                khakiCallsign = i === 1 ? 'KHAKI' : `KHAKI-${i}`;
-                break;
+        // Simple Khaki setup
+        function setupKhakiCallsign() {
+            const nameInput = document.getElementById('khaki-name-input');
+            const name = nameInput.value.trim();
+            
+            if (!name) {
+                alert('Please enter your name');
+                return false;
             }
             
-            // Update the UI elements immediately
-            const assignedElement = document.getElementById('assigned-callsign');
-            if (assignedElement) {
-                assignedElement.textContent = khakiCallsign;
-            }
+            khakiCallsign = `KHAKI (${name})`;
             
+            // Set the callsign input that app.js expects
             const callsignInput = document.getElementById('callsign');
             if (callsignInput) {
                 callsignInput.value = khakiCallsign;
             }
             
+            // Update display
             const currentCallsign = document.getElementById('current-callsign');
             if (currentCallsign) {
                 currentCallsign.textContent = khakiCallsign;
             }
             
-            // Set global variable immediately
-            window.rangerCallsign = khakiCallsign;
-            
-            console.log('🎖️ Assigned Khaki callsign:', khakiCallsign);
-            return khakiCallsign;
+            console.log('🎖️ Set up Khaki callsign:', khakiCallsign);
+            return true;
         }
         
         // Initialize when DOM is ready
         document.addEventListener('DOMContentLoaded', () => {
             console.log('🎖️ DOM loaded, initializing Khaki interface...');
             
-            // Assign Khaki number immediately
-            assignKhakiNumber();
-            
             // Initialize recordings
             initRecordingsAudioContext();
             loadRecordings();
             
-            // Add clear recordings button listener
-            const clearButton = document.getElementById('clear-all-recordings');
-            if (clearButton) {
-                clearButton.addEventListener('click', clearAllRecordings);
-            }
-            
-            // Add finish session button listener
-            const finishButton = document.getElementById('finish-session-button');
-            if (finishButton) {
-                finishButton.addEventListener('click', () => {
-                    if (currentSession) {
-                        finishCurrentSession();
-                        addToActivityLog('📼 Current recording session saved manually');
-                    } else {
-                        alert('No active recording session to save');
-                    }
-                });
-            }
-            
-            // Update finish session button visibility
-            setInterval(() => {
-                const finishButton = document.getElementById('finish-session-button');
-                if (finishButton) {
-                    if (currentSession) {
-                        finishButton.style.display = 'block';
-                        finishButton.style.background = '#27ae60';
-                        finishButton.textContent = `📼 Finish Session (${currentSession.transmissions.length} transmissions)`;
-                    } else {
-                        finishButton.style.display = 'none';
-                    }
-                }
-            }, 1000);
-            
-            console.log('✅ Khaki interface initialized, ready for app.js');
-        });
-        
-        // Set up additional functionality after page loads
-        window.addEventListener('load', () => {
-            console.log('🎖️ Page fully loaded, setting up additional Khaki functionality...');
-            
-            // Set up join button with simple logic
+            // Add join button listener
             const joinButton = document.getElementById('join-button');
             if (joinButton) {
                 joinButton.addEventListener('click', () => {
                     console.log('🎖️ Khaki join button clicked');
                     
-                    // Ensure we have a callsign
-                    if (!khakiCallsign) {
-                        assignKhakiNumber();
-                    }
-                    
-                    // Set the callsign input that app.js expects
-                    const callsignInput = document.getElementById('callsign');
-                    if (callsignInput) {
-                        callsignInput.value = khakiCallsign;
-                        console.log('Set callsign input to:', khakiCallsign);
+                    // Set up callsign from name input
+                    if (!setupKhakiCallsign()) {
+                        return; // Name validation failed
                     }
                     
                     console.log('📡 Calling joinNetwork...');
                     
-                    // Just call the global joinNetwork function - no error checking
+                    // Call joinNetwork function
                     if (typeof joinNetwork === 'function') {
                         joinNetwork();
                     } else {
                         console.error('joinNetwork function not found');
-                        // Remove the annoying alert and just try again after a short delay
                         setTimeout(() => {
                             if (typeof joinNetwork === 'function') {
                                 joinNetwork();
@@ -619,6 +560,41 @@
                     console.error('Error checking for new recordings:', error);
                 }
             }
+            
+            console.log('✅ Khaki interface initialized, ready for app.js');
+            
+            // Add clear recordings button listener
+            const clearButton = document.getElementById('clear-all-recordings');
+            if (clearButton) {
+                clearButton.addEventListener('click', clearAllRecordings);
+            }
+            
+            // Add finish session button listener
+            const finishButton = document.getElementById('finish-session-button');
+            if (finishButton) {
+                finishButton.addEventListener('click', () => {
+                    if (currentSession) {
+                        finishCurrentSession();
+                        addToActivityLog('📼 Current recording session saved manually');
+                    } else {
+                        alert('No active recording session to save');
+                    }
+                });
+            }
+            
+            // Update finish session button visibility
+            setInterval(() => {
+                const finishButton = document.getElementById('finish-session-button');
+                if (finishButton) {
+                    if (currentSession) {
+                        finishButton.style.display = 'block';
+                        finishButton.style.background = '#27ae60';
+                        finishButton.textContent = `📼 Finish Session (${currentSession.transmissions.length} transmissions)`;
+                    } else {
+                        finishButton.style.display = 'none';
+                    }
+                }
+            }, 1000);
         });
         
         // Initialize recordings audio context
